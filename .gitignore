@@ -27,3 +27,16 @@
 *.i*86
 *.x86_64
 *.hex
+
+# Clion
+.idea/
+
+# ctags
+.tags*
+
+# Binaries
+tour_cse533-14
+tour_cse533-12
+arp_cse533-14
+arp_cse533-12
+prhwaddrs
