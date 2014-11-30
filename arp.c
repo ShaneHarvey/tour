@@ -49,8 +49,21 @@ UNIX_DOMAIN_FAIL:
 int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
     int success = EXIT_SUCCESS;
     int running = 1;
+    // select vars
+    fd_set rset;
+    int max_fd = unix_domain > pf_socket ? unix_domain + 1 : pf_socket + 1;
     while(running) {
-        /* TODO: Do stuff */
+        /* Now wait to receive the transmissions */
+        FD_ZERO(&rset);
+        FD_SET(unix_domain, &rset);
+        FD_SET(pf_socket, &rset);
+        select(max_fd, &rset, NULL, NULL, NULL);
+        /* Handle unix domain socket communications */
+        if(FD_ISSET(unix_domain, &rset)) {
+        }
+        /* handle PF_PACKET socket comminications */
+        if(FD_ISSET(pf_socket, &rset)) {
+        }
     }
     return success;
 }
