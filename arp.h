@@ -1,11 +1,16 @@
 #ifndef ARP_H
 #define ARP_H
+#include <signal.h>
+/* System headers */
+#include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <netpacket/packet.h>
 #include <net/ethernet.h>
 #include "get_hw_addrs.h"
 #include "api.h"
 #include "common.h"
+#include "debug.h"
 
 /* Used as the ethernet frame type */
 #define ETH_P_ODR 0xF31F
