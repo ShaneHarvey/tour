@@ -4,6 +4,7 @@ CFLAGS = -Wall -Werror -std=gnu89 -DCOLOR
 USER=cse533-14
 TMP=tour arp
 BINS=$(TMP:=_$(USER))
+TESTS = check_cache
 
 all: $(BINS)
 
@@ -22,8 +23,14 @@ tour_%: tour.o api.o
 prhwaddrs: prhwaddrs.c get_hw_addrs.o
 	$(CC) $(CFLAGS) -o $@ $^
 
+test: CFLAGS += -g
+test: minunit_cache.o cache.o
+	$(CC) $(CFLAGS) -o $@ $^
+	./test
+	@rm -f test *cache.o
+
 clean:
-	rm -f *.o $(BINS) prhwaddrs
+	rm -f *.o $(BINS) prhwaddrs test
 
 PHONY: all clean
 SECONDARY: tour.o arp.o api.o get_hw_addrs.o
