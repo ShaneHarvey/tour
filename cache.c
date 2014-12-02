@@ -65,12 +65,16 @@ bool removeFromCache(Cache **list, Cache *entry) {
                     *list = node->next;
                 } else {
                     node->prev->next = node->next;
-                    node->next->prev = node->prev;
+                    if(node->next != NULL) {
+                        node->next->prev = node->prev;
+                    }
                 }
                 // Should I free this?
-                free(entry);
+                free(node);
                 success = true;
                 break;
+            } else {
+                node = node->next;
             }
         }
     }
@@ -82,8 +86,7 @@ Cache *getFromCache(Cache *list, Cache *entry) {
     if(list != NULL && entry != NULL) {
         Cache *node = list;
         while(node != NULL) {
-            if(node->sll_ifindex == entry->sll_ifindex &&
-               memcmp(node->if_haddr, entry->if_haddr, IFHWADDRLEN)) {
+            if(isSameCache(node, entry)) {
                    found = node;
                    break;
             } else {
