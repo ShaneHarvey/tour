@@ -13,6 +13,8 @@ set(SOURCE_FILES_TEST
 set(SOURCE_FILES_TOUR
     api.c
     api.h
+    ping.c
+    ping.h
     common.h
     debug.h
     get_hw_addrs.c

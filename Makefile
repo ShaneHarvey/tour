@@ -14,7 +14,7 @@ debug: $(BINS)
 arp_%: arp.o get_hw_addrs.o
 	$(CC) -o $@ $^
 
-tour_%: tour.o api.o ping.o
+tour_%: tour.o get_hw_addrs.o api.o ping.o
 	$(CC) -pthread -o $@ $^
 
 ping.o: ping.c ping.h

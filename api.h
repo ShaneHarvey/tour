@@ -24,10 +24,9 @@ struct arpreq {
 /* ARP Response that ARP sends back to API */
 struct hwaddr {
     int             sll_ifindex;    /* Interface number */
-    unsigned char   sll_srcaddr[8]; /* Physical layer address of the interface*/
     unsigned short  sll_hatype;     /* Hardware type */
     unsigned char   sll_halen;      /* Length of address */
-    unsigned char   sll_dstaddr[8]; /* Physical layer address */
+    unsigned char   sll_addr[8]; /* Physical layer address */
 };
 
 int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa);

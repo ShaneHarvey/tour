@@ -8,9 +8,12 @@
 #include <netpacket/packet.h>
 #include <net/ethernet.h>
 #include <pthread.h>
-#include "debug.h"
-#include "api.h"
+#include "get_hw_addrs.h"
 
+struct pingarg {
+    struct hwa_info src;
+    struct in_addr tgtip;
+};
 void *run_ping(void *arg);
 int send_frame(int sock, void *payload, int size, unsigned char *dst_mac,
         unsigned char *src_mac, int ifi_index);

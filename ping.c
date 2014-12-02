@@ -1,5 +1,6 @@
-#include <ldap.h>
 #include "ping.h"
+#include "debug.h"
+#include "api.h"
 
 static void close_sock(void *sockptr) {
     int sock = *(int *)sockptr;
@@ -17,11 +18,12 @@ void *run_ping(void *arg) {
     int sock = -1;
     pthread_t self;
     short seq = 0;
-    struct in_addr *target = (struct in_addr *)arg;
+    struct pingarg args;
     char packet[sizeof(struct ip) + sizeof(struct icmphdr)];
     struct ip *iph = (struct ip *)(packet);
     struct icmphdr *imcph = (struct icmphdr *)(packet + sizeof(struct ip));
 
+    memcpy(&args, arg, sizeof(struct pingarg));
     self = pthread_self();
     /* Ensures the socket is closed before it is cancelled */
     pthread_cleanup_push(close_sock, &sock);
@@ -33,7 +35,7 @@ void *run_ping(void *arg) {
     }
     /*TODO: FINISH Init the ICMP (Echo data?) and IP headers */
     memset(packet, 0, sizeof(packet));
-    iph->ip_dst.s_addr = target->s_addr;
+    iph->ip_dst.s_addr = args.tgtip.s_addr;
     imcph->type = ICMP_ECHO;
     imcph->un.echo.id = htons((short)self);
     while(1) {
@@ -42,12 +44,14 @@ void *run_ping(void *arg) {
         /* Increment echo sequence number */
         imcph->un.echo.sequence = htons(seq++);
         memset(&tgt, 0, sizeof(tgt));
-        tgt.sin_addr.s_addr = target->s_addr;
+        tgt.sin_addr.s_addr = args.tgtip.s_addr;
         tgt.sin_family = AF_INET;
         /* Request MAC address of destination IP */
         areq((struct sockaddr *)&tgt, sizeof(tgt), &dst);
         /* Send ECHO request */
-        send_frame(sock, packet, sizeof(packet), dst.sll_srcaddr, dst.sll_dstaddr, dst.sll_ifindex);
+        if(!send_frame(sock, packet, sizeof(packet), dst.sll_addr, args.src.if_haddr, args.src.if_index)) {
+            break;
+        }
         /* Sleep for one second, sleep(2) is a pthread cancellation point */
         sleep(1);
     }
@@ -62,8 +66,8 @@ void *run_ping(void *arg) {
  * @sock       The packet socket to send the frame
  * @payload    The data payload of the ethernet frame
  * @size       The size of the payload
- * @dst_hwaddr The next hop MAC address
- * @src_hwaddr The outgoing MAC address
+ * @dstmac     The next hop MAC address
+ * @srcmac     The outgoing MAC address
  * @ifi_index  The outgoing interface index in HOST byte order
  * @return 1 if succeeded 0 if failed
  */
