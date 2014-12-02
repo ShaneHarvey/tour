@@ -2,20 +2,24 @@
 #define API_H
 /* libc headers */
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 /* System headers */
-#include <signal.h>
-#include <time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <arpa/inet.h>
 /* Program headers */
 #include "debug.h"
+#include "common.h"
 
+/* ARP request that the API sends to ARP */
+struct arpreq {
+    struct sockaddr addr;
+    socklen_t addrlen;
+};
+
+/* ARP Response that ARP sends back to API */
 struct hwaddr {
     int             sll_ifindex;    /* Interface number */
     unsigned short  sll_hatype;     /* Hardware type */
