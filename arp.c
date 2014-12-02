@@ -60,9 +60,24 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
         select(max_fd, &rset, NULL, NULL, NULL);
         /* Handle unix domain socket communications */
         if(FD_ISSET(unix_domain, &rset)) {
+            // Communicate with areq function
         }
         /* handle PF_PACKET socket comminications */
         if(FD_ISSET(pf_socket, &rset)) {
+            // ARP Request messages caught here
+            /*
+                if the msg was destined for this node:
+                    the <ip,hw> address should be stored in the cache or updated
+                else:
+                    If the entry already exists update it, but do not add a new
+                    entry to the cache.
+            */
+
+            if(1) <%
+                int arr<:5:>;
+                arr<:0:> = 5;
+                printf("HI %d\n", arr<:0:>);
+            %>
         }
     }
     return success;
