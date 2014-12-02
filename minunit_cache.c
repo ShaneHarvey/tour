@@ -8,28 +8,53 @@
 
 static Cache *list = NULL;
 int tests_run = 0;
-#define TOTAL_TESTS 3
+#define TOTAL_TESTS 5
 
 static void init_cache(Cache *cache, int value) {
-    cache->sll_ifindex = value;
-    cache->domain_socket = value;
-    cache->sll_hatype = value;
-    memset(cache->if_haddr, value, IFHWADDRLEN);
+    if(cache != NULL) {
+        /* memset the memory */
+        memset(cache, 0, sizeof(Cache));
+        /* Set fields */
+        cache->sll_ifindex = value;
+        cache->domain_socket = value;
+        cache->sll_hatype = value;
+        memset(cache->if_haddr, value, IFHWADDRLEN);
+    } else {
+        warn("Attempted to initialize a NULL cache entry.\n");
+    }
+}
+
+static size_t cache_size(Cache *list) {
+    size_t size = 0;
+    Cache *node = list;
+    while(node != NULL) {
+        size++;
+        node = node->next;
+    }
+    return size;
+}
+
+static void free_cache_entry(Cache *entry) {
+    if(entry != NULL) {
+        free_cache_entry(entry->next);
+        free(entry);
+    }
+}
+
+static void free_cache(Cache **list) {
+    if(list != NULL) {
+        free_cache_entry(*list);
+        *list = NULL;
+    }
 }
 
 static char* test_create_cache(void) {
-    Cache *node = NULL;
     size_t count = 0;
     /* Allocate space for the cache */
     Cache *c1 = malloc(sizeof(Cache));
     Cache *c2 = malloc(sizeof(Cache));
     Cache *c3 = malloc(sizeof(Cache));
     Cache *c4 = malloc(sizeof(Cache));
-    /* memset the structs */
-    memset(c1, 0, sizeof(Cache));
-    memset(c2, 0, sizeof(Cache));
-    memset(c3, 0, sizeof(Cache));
-    memset(c4, 0, sizeof(Cache));
     /* Set some random fields of c1, c2, c3, and c4 */
     init_cache(c1, 1);
     init_cache(c2, 2);
@@ -45,11 +70,7 @@ static char* test_create_cache(void) {
     mu_assert("error, added to a NULL list", addToCache(NULL, c1) == false);
     mu_assert("error, added a NULL node to a NULL list", addToCache(NULL, NULL) == false);
     /* Now check the size of the list */
-    node = list;
-    while(node != NULL) {
-        count++;
-        node = node->next;
-    }
+    count = cache_size(list);
     /* Check to make sure the correct number of nodes were added */
     mu_assert("error, the size of the list is not equal to the cache entries added", count == 4);
     /* On success return 0 */
@@ -74,6 +95,8 @@ static char* test_update_cache(void) {
     mu_assert("Updated a cache entry in a NULL list.", updateCache(NULL, node) == false);
     mu_assert("Updated a NULL cache entry in the list.", updateCache(list, NULL) == false);
     mu_assert("Updated a NULL cache entry in a NULL list.", updateCache(NULL, NULL) == false);
+    /* Make sure that after the update the operation we still only have 4 cache entries */
+    mu_assert("Cache size is not equal to 4 (and it should be)", cache_size(list) == 4);
     return EXIT_SUCCESS;
 }
 
@@ -97,10 +120,51 @@ static char* test_samecache(void) {
     return EXIT_SUCCESS;
 }
 
+static char* test_get_cache(void) {
+    Cache find;
+    Cache *result = NULL;
+    /* Initialize the cache to find the entry */
+    init_cache(&find, 1);
+    /* only matches on results returned by isSameCache */
+    result = getFromCache(list, &find);
+    mu_assert("Unable to find the cache entry.", result != NULL);
+    /* Search for a non-existant cache entry */
+    result = NULL;
+    find.sll_ifindex = 1987;
+    result = getFromCache(list, &find);
+    mu_assert("Found a non-existant cache entry.", result == NULL);
+    /* Look for a bunch of null things */
+    mu_assert("Found a cache entry in a NULL list.", getFromCache(NULL, &find) == NULL);
+    mu_assert("Found a NULL cache entry in the list.", getFromCache(list, NULL) == NULL);
+    mu_assert("Found a NULL cache entry in a NULL list.", getFromCache(NULL, NULL) == NULL);
+    return EXIT_SUCCESS;
+}
+
+static char* test_remove_cache(void) {
+    Cache c1;
+    /* Initialize the cache to find the entry */
+    init_cache(&c1, 1);
+    /* Attempt to remove the cache */
+    mu_assert("Failed to remove an existing entry from the cache.", removeFromCache(&list, &c1) == true);
+    mu_assert("Cache list is not the correct size after removing entry.", cache_size(list) == 3);
+    /* Attempt a bad remove */
+    c1.sll_ifindex = 1987;
+    mu_assert("Removed a cache entry that doesn't exist", removeFromCache(&list, &c1) == false);
+    /* Attempt removing NULL items */
+    mu_assert("Removed a cache entry that is NULL", removeFromCache(&list, NULL) == false);
+    mu_assert("Removed a cache entry from a NULL list.", removeFromCache(NULL, &c1) == false);
+    mu_assert("Removed a NULL cache entry from a NULL list.", removeFromCache(NULL, NULL) == false);
+    return EXIT_SUCCESS;
+}
+
 static char* all_tests() {
     mu_run_test(test_create_cache);
     mu_run_test(test_samecache);
     mu_run_test(test_update_cache);
+    mu_run_test(test_get_cache);
+    mu_run_test(test_remove_cache);
+    /* Clean up the rest of the memory */
+    free_cache(&list);
     return EXIT_SUCCESS;
 }
 
@@ -112,5 +176,6 @@ int main(int argc, char *argv[]) {
         success("ALL TESTS PASSED\n");
     }
     info("Tests run: %d/%d\n", tests_run, TOTAL_TESTS);
+    /* Return non-zero so we can debug test executable */
     return result != 0;
 }
