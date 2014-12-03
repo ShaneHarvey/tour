@@ -2,6 +2,8 @@
 #include "debug.h"
 #include "api.h"
 
+extern char *host;
+
 static void close_sock(void *sockptr) {
     int sock = *(int *)sockptr;
     if(sock >= 0)
@@ -14,14 +16,14 @@ static void close_sock(void *sockptr) {
  *
  * @arg  Pointer to a struct in_addr containing the IP address to ping
  */
-void *run_ping(void *arg) {
+void *run_ping_send(void *arg) {
     int sock = -1;
     pthread_t self;
     short seq = 0;
     struct pingarg args;
     char packet[sizeof(struct ip) + sizeof(struct icmphdr)];
     struct ip *iph = (struct ip *)(packet);
-    struct icmphdr *imcph = (struct icmphdr *)(packet + sizeof(struct ip));
+    struct icmphdr *icmph = (struct icmphdr *)(packet + sizeof(struct ip));
 
     memcpy(&args, arg, sizeof(struct pingarg));
     self = pthread_self();
@@ -36,13 +38,13 @@ void *run_ping(void *arg) {
     /*TODO: FINISH Init the ICMP (Echo data?) and IP headers */
     memset(packet, 0, sizeof(packet));
     iph->ip_dst.s_addr = args.tgtip.s_addr;
-    imcph->type = ICMP_ECHO;
-    imcph->un.echo.id = htons((short)self);
+    icmph->type = ICMP_ECHO;
+    icmph->un.echo.id = htons((short)self);
     while(1) {
         struct sockaddr_in tgt;
         struct hwaddr dst;
         /* Increment echo sequence number */
-        imcph->un.echo.sequence = htons(seq++);
+        icmph->un.echo.sequence = htons(seq++);
         memset(&tgt, 0, sizeof(tgt));
         tgt.sin_addr.s_addr = args.tgtip.s_addr;
         tgt.sin_family = AF_INET;
@@ -109,4 +111,47 @@ int send_frame(int sock, void *payload, int size, unsigned char *dstmac,
         debug("Send %d bytes, payload size:%d\n", nsent, size);
     }
     return 1;
+}
+
+/**
+* Start routine of a pthread create call. Receives ICMP echo responses and
+* prints out a message.
+*
+* @unused  Unused
+*/
+void *run_ping_recv(void *unused) {
+    int pg_sock, nread;
+    struct sockaddr_in src;
+    socklen_t len;
+    char packet[IP_MSS];
+    struct ip *iph = (struct ip *)(packet);
+    struct icmphdr *icmph = (struct icmphdr *)(packet + sizeof(struct ip));
+    /* char *icmpdata = (char *)(icmph + sizeof(struct icmphdr)); */
+
+    /* Ensures the socket is closed before it is cancelled */
+    pthread_cleanup_push(close_sock, &pg_sock);
+    /* Create the IP raw socket used to receive ICMP echo responses */
+    if((pg_sock = socket(AF_INET, SOCK_RAW, htons(IPPROTO_ICMP))) < 0) {
+        error("failed to create raw socket: %s\n", strerror(errno));
+        pthread_exit(NULL);
+    }
+    /* Listen for echo responses forever */
+    while(1) {
+        len = sizeof(src);
+        memset(&src, 0, len);
+        memset(packet, 0, sizeof(packet));
+        nread = recvfrom(pg_sock, packet, sizeof(packet), 0, (struct sockaddr*)&src, &len);
+        if(nread < 0) {
+            error("ping socket recvfrom failed: %s\n", strerror(errno));
+            pthread_exit(NULL);
+        } else if(icmph->type != ICMP_ECHOREPLY) {
+            debug("Node %s. Ignoring non-ping ICMP message.\n", host);
+        } else if(nread < sizeof(struct ip) + sizeof(struct icmphdr)) {
+            debug("Node %s. Received %d bytes. Too small to be ICMP ping.\n", host, nread);
+        } else {
+            info("Node %s. Received ping from: %s\n", host, inet_ntoa(iph->ip_src));
+        }
+    }
+    pthread_cleanup_pop(1);
+    pthread_exit(NULL);
 }

@@ -14,7 +14,9 @@ struct pingarg {
     struct hwa_info src;
     struct in_addr tgtip;
 };
-void *run_ping(void *arg);
+void *run_ping_send(void *arg);
+void *run_ping_recv(void *unused);
+
 int send_frame(int sock, void *payload, int size, unsigned char *dst_mac,
         unsigned char *src_mac, int ifi_index);
 #endif
