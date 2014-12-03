@@ -82,34 +82,33 @@ int valid_args(int argc, char **argv) {
 }
 
 int start_tour(int rt, int udp, int numhosts, char **hosts) {
-    struct sockaddr_in mcastaddr;
+    struct in_addr mcastip;
     char tourmsg[TOUR_MAXPACKET];
     struct tourhdr *tour = (struct tourhdr *) tourmsg;
-    int port, i;
+    int port, i, j;
 
     if((port = bind_port(udp, 0)) < 0)  {
         return 0;
     }
 
-    memset(&mcastaddr, 0, sizeof(mcastaddr));
-    mcastaddr.sin_family = AF_INET;
-    inet_aton("224.3.3.3", &mcastaddr.sin_addr);
+    inet_aton("224.3.3.3", &mcastip);
     /* Join the multicast group */
-    if (!mcast_join(udp, &mcastaddr, 0)) {
+    if (!mcast_join(udp, mcastip, port, 0)) {
         return 0;
     }
 
     /* Create the initial tour message */
     memset(tourmsg, 0, sizeof(tourmsg));
-    tour->mcastip.s_addr = mcastaddr.sin_addr.s_addr;
+    tour->mcastip.s_addr = mcastip.s_addr;
     tour->mcastport = htons(port);
     tour->len = numhosts;
 
     /* IPs are in reverse order */
-    for(i = numhosts - 1; i >= 0; --i) {
-        if(!getipbyhost(hosts[i], tour->ips + i)) {
+    for(i = 0, j = numhosts - 1; i < numhosts; ++i, --j) {
+        if(!getipbyhost(hosts[i], tour->ips + j)) {
             return 0;
         }
+        debug("Host %d: %s, IP=%s\n", i + 1, hosts[i], inet_ntoa(tour->ips[j]));
     }
     return forward_tour(rt, tour);
 }
@@ -137,6 +136,20 @@ int run_tour(int rt, int udp, int binded) {
 
         if(FD_ISSET(udp, &rset)) {
             /* Halt all pinging activity */
+            char buf[1024];
+            struct sockaddr_in src;
+            socklen_t srclen;
+            int nread;
+
+            memset(buf, 0, sizeof(buf));
+            memset(&src, 0, sizeof(src));
+
+            nread = recvfrom(rt, buf, sizeof(buf), 0, (struct sockaddr *)&src, &srclen);
+            if(nread < 0) {
+                error("UDP socket recvfrom failed: %s\n", strerror(errno));
+                return 0;
+            }
+            info("Node %s. Received: %s\n", host, buf);
             break;
         }
 
@@ -144,7 +157,7 @@ int run_tour(int rt, int udp, int binded) {
             /* Forward Tour message or end the tour if this is last node */
             char packet[IP_MAXPACKET];
             struct ip *iph = (struct ip *)packet;
-            struct tourhdr *tour = (struct tourhdr *)iph + sizeof(struct ip);
+            struct tourhdr *tour = (struct tourhdr *)(packet + sizeof(struct ip));
             struct sockaddr_in src;
             socklen_t srclen;
             int nread;
@@ -158,19 +171,57 @@ int run_tour(int rt, int udp, int binded) {
                 return 0;
             } else if(nread < sizeof(struct ip) + sizeof(struct tourhdr)) {
                 debug("Ignoring %d byte tour message: too short\n", nread);
+            } else if(ntohs(iph->ip_len) < sizeof(struct ip) + sizeof(struct tourhdr)) {
+                debug("Ignoring %d byte tour message: too short\n", nread);
             } else if(iph->ip_id != htons(IPID_TOUR)) {
                 debug("Ignoring %d byte tour message: wrong IP id field\n", nread);
             } else {
+                debug("Recv %d byte raw ip packet.\n", nread);
+                print_ip(iph);
+                print_tour(tour);
                 tour->len = ntohs(tour->len);
+                info("Node %s. Received tour packet: from %s, remaining hops "
+                        "%d\n", host, inet_ntoa(iph->ip_src),  tour->len);
+                if(!binded) {
+                    /* Bind to the multicast port */
+                    if(bind_port(udp, ntohs(tour->mcastport)) < 0)  {
+                        return 0;
+                    }
+                    /* Join the multicast group */
+                    if (!mcast_join(udp, tour->mcastip,ntohs(tour->mcastport), 0)) {
+                        return 0;
+                    }
+                }
+                /* Start pinging */
+
+                /* Forward tour packet */
                 if(tour->len > 0) {
                     if(!forward_tour(rt, tour)) {
                         return 0;
                     }
                 } else {
+                    char buf[1024];
+                    struct sockaddr_in dst;
+                    int nsent;
                     info("Tour reached final host\n");
                     /* Spend 5 seconds pinging */
                     sleep(5);
                     /* multicast end of tour message */
+                    memset(&dst, 0, sizeof(dst));
+                    dst.sin_addr.s_addr = tour->mcastip.s_addr;
+                    dst.sin_port = ntohs(tour->mcastport);
+                    dst.sin_family = AF_INET;
+
+                    snprintf(buf, sizeof(buf), "<<<<< This is node %s. Tour "
+                            "has ended. Group members please identify "
+                            "yourselves. >>>>>", host);
+                    info("Node %s. Sending: %s\n", host, buf);
+                    nsent = sendto(udp, buf, strlen(buf), 0,
+                            (struct sockaddr*)&dst, sizeof(dst));
+                    if(nsent < 0) {
+                        error("UDP socket sendto failed: %s\n", strerror(errno));
+                        return 0;
+                    }
                 }
             }
         }
@@ -237,6 +288,7 @@ int forward_tour(int rt, struct tourhdr *tour) {
     debug("Forwarding %zu byte tour packet with %d IPs\n", size, tour->len);
 
     tour->len = htons(tour->len);
+    print_tour(tour);
     return send_ip(rt, tour, size, nextip);
 }
 
@@ -257,7 +309,7 @@ int send_ip(int rt, void *data, size_t len, struct in_addr dstip) {
     iph->ip_hl = sizeof(struct ip) / 4;
     iph->ip_len = htons(sizeof(struct ip) + len);
     iph->ip_v = IPVERSION;
-    iph->ip_ttl = htons(128);
+    iph->ip_ttl = 128;
 
     /* Copy data into packet */
     memcpy(packet + sizeof(struct ip), data, len);
@@ -266,19 +318,28 @@ int send_ip(int rt, void *data, size_t len, struct in_addr dstip) {
     dstaddr.sin_family = AF_INET;
     dstaddr.sin_addr.s_addr = dstip.s_addr;
 
+    print_ip(iph);
+
     nsent = sendto(rt, packet, sizeof(packet), 0, (struct sockaddr *)&dstaddr, sizeof(dstaddr));
     if(nsent < 0) {
         error("raw socket failed to send: %s\n", strerror(errno));
         return 0;
     }
+    debug("Sent %d byte raw ip packet.\n", nsent);
     return nsent;
 }
 
-int mcast_join(int sockfd, struct sockaddr_in *mcastaddr, int ifindex) {
+int mcast_join(int sockfd, struct in_addr mcastip, int port, int ifindex) {
     struct group_req req;
+    struct sockaddr_in mcastaddr;
 
     memset(&req, 0, sizeof(req));
-    memcpy(&req.gr_group, mcastaddr, sizeof(struct sockaddr_in));
+    memset(&mcastaddr, 0, sizeof(mcastaddr));
+    mcastaddr.sin_family = AF_INET;
+    mcastaddr.sin_addr.s_addr = mcastip.s_addr;
+    mcastaddr.sin_port = port;
+
+    memcpy(&req.gr_group, &mcastaddr, sizeof(struct sockaddr_in));
     req.gr_interface = ifindex;
 
     if(setsockopt(sockfd, IPPROTO_IP, MCAST_JOIN_GROUP, &req, sizeof(req)) < 0) {
@@ -329,4 +390,30 @@ int getipbyhost(char *hostname, struct in_addr *hostip) {
     addr_list = (struct in_addr **)he->h_addr_list;
     *hostip = *addr_list[0];
     return 1;
+}
+
+/*
+ *@hdr The tour packet in Network byte order
+ */
+void print_tour(struct tourhdr *hdr) {
+    int i;
+
+    printf("TOUR: mcastaddr:%s mcastport:%hu len:%hu ips:",
+            inet_ntoa(hdr->mcastip), ntohs(hdr->mcastport), ntohs(hdr->len));
+    for(i = 0; i < ntohs(hdr->len); ++i) {
+        printf(" <-%s", inet_ntoa(hdr->ips[i]));
+    }
+    printf("\n");
+}
+
+/*
+ *@hdr The ip header in Network byte order
+ */
+void print_ip(struct ip *hdr) {
+
+    printf("IP: tos:0x%02hhX len:0x%04hX id:0x%04hX off:0x%04hX "
+            "ttl:0x%02hhX p:0x%02hhX sum:0x%04hX src:%s ", hdr->ip_tos,
+            hdr->ip_len, hdr->ip_id, hdr->ip_off, hdr->ip_ttl, hdr->ip_p,
+            hdr->ip_sum,inet_ntoa(hdr->ip_src));
+    printf("dst:%s\n", inet_ntoa(hdr->ip_dst));
 }
