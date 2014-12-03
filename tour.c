@@ -1,9 +1,8 @@
 #include "tour.h"
-#include "get_hw_addrs.h"
 #include "ping.h"
 
-static struct hwa_info *hwas;  /* List of Hardware Addresses      */
-char host[HOST_NAME_MAX];      /* Hostname running ODR, eg vm2    */
+char host[HOST_NAME_MAX];  /* Hostname running ODR, eg vm2 */
+struct in_addr hostip;     /* IP of this host */
 
 int main(int argc, char **argv) {
     int rt, udp, opt, status = EXIT_FAILURE, binded = 0;
@@ -28,36 +27,30 @@ int main(int argc, char **argv) {
         error("failed to create UDP socket: %s\n", strerror(errno));
         goto CLOSE_RT;
     }
-    /* Get our interface info */
-    if((hwas = get_hw_addrs()) == NULL) {
-        error("Failed to find system interfaces: %s\n", strerror(errno));
-        goto CLOSE_UDP;
-    }
     /* Lookup our hostname */
     if(gethostname(host, sizeof(host)) < 0) {
         error("gethostname failed: %s\n", strerror(errno));
         goto CLOSE_UDP;
     } else {
-        debug("Tour started on node %s\n", host);
+        getipbyhost(host, &hostip);
+        info("Tour running on node %s, IP %s\n", host, inet_ntoa(hostip));
     }
 
     if(argc > 1) {
         /* Creating a multicast group and sending the TOUR packet */
         if(!start_tour(rt, udp, argc - 1, argv + 1)) {
             error("failed to start tour: %s\n", strerror(errno));
-            goto FREE_HWA;
+            goto CLOSE_UDP;
         }
         binded = 1;
     }
     /* run the tour program */
     if(!run_tour(rt, udp, binded)) {
         error("Tour failed: %s\n", strerror(errno));
-        goto FREE_HWA;
+        goto CLOSE_UDP;
     }
 
     status = EXIT_SUCCESS; /* Normal cleanup */
-FREE_HWA:
-    free_hwa_info(hwas);
 CLOSE_UDP:
     close(udp);
 CLOSE_RT:
@@ -93,7 +86,7 @@ int start_tour(int rt, int udp, int numhosts, char **hosts) {
 
     inet_aton("224.3.3.3", &mcastip);
     /* Join the multicast group */
-    if (!mcast_join(udp, mcastip, port, 0)) {
+    if (!mcast_join(udp, mcastip, 0)) {
         return 0;
     }
 
@@ -143,6 +136,7 @@ int run_tour(int rt, int udp, int binded) {
 
             memset(buf, 0, sizeof(buf));
             memset(&src, 0, sizeof(src));
+            srclen = sizeof(src);
 
             nread = recvfrom(rt, buf, sizeof(buf), 0, (struct sockaddr *)&src, &srclen);
             if(nread < 0) {
@@ -164,6 +158,7 @@ int run_tour(int rt, int udp, int binded) {
 
             memset(packet, 0, sizeof(packet));
             memset(&src, 0, sizeof(src));
+            srclen = sizeof(src);
 
             nread = recvfrom(rt, packet, sizeof(packet), 0, (struct sockaddr *)&src, &srclen);
             if(nread < 0) {
@@ -188,9 +183,10 @@ int run_tour(int rt, int udp, int binded) {
                         return 0;
                     }
                     /* Join the multicast group */
-                    if (!mcast_join(udp, tour->mcastip,ntohs(tour->mcastport), 0)) {
+                    if (!mcast_join(udp, tour->mcastip, 0)) {
                         return 0;
                     }
+                    binded = 1;
                 }
                 /* Start pinging */
 
@@ -209,7 +205,7 @@ int run_tour(int rt, int udp, int binded) {
                     /* multicast end of tour message */
                     memset(&dst, 0, sizeof(dst));
                     dst.sin_addr.s_addr = tour->mcastip.s_addr;
-                    dst.sin_port = ntohs(tour->mcastport);
+                    dst.sin_port = tour->mcastport;
                     dst.sin_family = AF_INET;
 
                     snprintf(buf, sizeof(buf), "<<<<< This is node %s. Tour "
@@ -296,13 +292,11 @@ int send_ip(int rt, void *data, size_t len, struct in_addr dstip) {
     char packet[sizeof(struct ip) + len];
     struct ip *iph = (struct ip *)packet;
     struct sockaddr_in dstaddr;
-    struct sockaddr_in *srcaddr;
     int nsent;
 
     /* Fill in required IP header fields */
-    srcaddr = (struct sockaddr_in *)hwas->ip_addr;
     memset(packet, 0, sizeof(packet));
-    iph->ip_src.s_addr = srcaddr->sin_addr.s_addr;
+    iph->ip_src.s_addr = hostip.s_addr;
     iph->ip_dst.s_addr = dstip.s_addr;
     iph->ip_p = IPPROTO_TOUR;
     iph->ip_id = htons(IPID_TOUR);
@@ -329,20 +323,13 @@ int send_ip(int rt, void *data, size_t len, struct in_addr dstip) {
     return nsent;
 }
 
-int mcast_join(int sockfd, struct in_addr mcastip, int port, int ifindex) {
-    struct group_req req;
-    struct sockaddr_in mcastaddr;
+int mcast_join(int sockfd, struct in_addr mcastip, int ifindex) {
+    struct ip_mreq mreq;
 
-    memset(&req, 0, sizeof(req));
-    memset(&mcastaddr, 0, sizeof(mcastaddr));
-    mcastaddr.sin_family = AF_INET;
-    mcastaddr.sin_addr.s_addr = mcastip.s_addr;
-    mcastaddr.sin_port = port;
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    mreq.imr_multiaddr.s_addr = mcastip.s_addr;
 
-    memcpy(&req.gr_group, &mcastaddr, sizeof(struct sockaddr_in));
-    req.gr_interface = ifindex;
-
-    if(setsockopt(sockfd, IPPROTO_IP, MCAST_JOIN_GROUP, &req, sizeof(req)) < 0) {
+    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
         error("failed join multicast group: %s\n", strerror(errno));
         return 0;
     }

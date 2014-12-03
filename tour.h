@@ -36,7 +36,7 @@ int end_tour(int udp);
 /* Helper functions */
 int forward_tour(int rt, struct tourhdr *tour);
 int send_ip(int rt, void *data, size_t len, struct in_addr dstip);
-int mcast_join(int sockfd, struct in_addr mcastip, int port, int ifindex);
+int mcast_join(int sockfd, struct in_addr mcastip, int ifindex);
 int bind_port(int sockfd, int port);
 int getipbyhost(char *hostname, struct in_addr *hostip);
 void print_tour(struct tourhdr *hdr);
