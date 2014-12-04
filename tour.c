@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
 
     if(argc > 1) {
         /* Creating a multicast group and sending the TOUR packet */
-        if(!start_tour(rt, udp_recv, argc - 1, argv + 1)) {
+        if(!start_tour(rt, udp_recv, udp_send, argc - 1, argv + 1)) {
             error("failed to start tour: %s\n", strerror(errno));
             goto CLOSE_UDP_SEND;
         }
@@ -87,10 +87,11 @@ int valid_args(int argc, char **argv) {
     return 1;
 }
 
-int start_tour(int rt, int udp_recv, int numhosts, char **hosts) {
+int start_tour(int rt, int udp_recv, int udp_send, int numhosts, char **hosts) {
     struct in_addr mcastip;
     char tourmsg[TOUR_MAXPACKET];
     struct tourhdr *tour = (struct tourhdr *) tourmsg;
+    struct sockaddr_in mcastaddr;
     int port, i, j;
 
     if((port = bind_port(udp_recv, 0)) < 0)  {
@@ -100,6 +101,15 @@ int start_tour(int rt, int udp_recv, int numhosts, char **hosts) {
     inet_aton(MCAST_ADDR, &mcastip);
     /* Join the multicast group */
     if (!mcast_join(udp_recv, mcastip, mcastindex)) {
+        return 0;
+    }
+    /* Connect to the multicast address */
+    memset(&mcastaddr, 0, sizeof(mcastaddr));
+    mcastaddr.sin_family = AF_INET;
+    mcastaddr.sin_addr.s_addr = mcastip.s_addr;
+    mcastaddr.sin_port = port;
+    if(connect(udp_send, (struct sockaddr*)&mcastaddr, sizeof(mcastaddr)) < 0) {
+        error("UDP failed to connect: %s\n", strerror(errno));
         return 0;
     }
 
@@ -192,8 +202,18 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
                         "%d\n", host, inet_ntoa(iph->ip_src),  tour->len);
                 if(!binded) {
                     int port;
+                    struct sockaddr_in mcastaddr;
                     /* Bind to the multicast port */
                     if((port = bind_port(udp_recv, tour->mcastport)) < 0)  {
+                        goto CLEANUP_THREADS;
+                    }
+                    /* Connect to the multicast address */
+                    memset(&mcastaddr, 0, sizeof(mcastaddr));
+                    mcastaddr.sin_family = AF_INET;
+                    mcastaddr.sin_addr.s_addr = tour->mcastip.s_addr;
+                    mcastaddr.sin_port = port;
+                    if(connect(udp_send, (struct sockaddr*)&mcastaddr, sizeof(mcastaddr)) < 0) {
+                        error("UDP failed to connect: %s\n", strerror(errno));
                         goto CLEANUP_THREADS;
                     }
                     /* Join the multicast group */
@@ -214,24 +234,15 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
                     }
                 } else {
                     char buf[1024];
-                    struct sockaddr_in dst;
-                    int nsent;
                     info("Tour reached final host\n");
                     /* Spend 5 seconds pinging */
                     sleep(5);
-                    /* multicast end of tour message */
-                    memset(&dst, 0, sizeof(dst));
-                    dst.sin_addr.s_addr = tour->mcastip.s_addr;
-                    dst.sin_port = tour->mcastport;
-                    dst.sin_family = AF_INET;
 
                     snprintf(buf, sizeof(buf), "<<<<< This is node %s. Tour "
                             "has ended. Group members please identify "
                             "yourselves. >>>>>", host);
                     info("Node %s. Sending: %s\n", host, buf);
-                    nsent = sendto(udp_send, buf, strlen(buf), 0,
-                            (struct sockaddr*)&dst, sizeof(dst));
-                    if(nsent < 0) {
+                    if(send(udp_send, buf, strlen(buf), 0) < 0) {
                         error("UDP socket sendto failed: %s\n", strerror(errno));
                         goto CLEANUP_THREADS;
                     }
@@ -258,7 +269,18 @@ CLEANUP_THREADS:
 }
 
 int end_tour(int udp_recv, int udp_send) {
+    char buf[1024];
+    info("Tour reached final host\n");
+    /* Spend 5 seconds pinging */
+    sleep(5);
 
+    snprintf(buf, sizeof(buf), "<<<<< Node %s. I am a member of the group. "
+            ">>>>>", host);
+    info("Node %s. Sending: %s\n", host, buf);
+    if(send(udp_send, buf, strlen(buf), 0) < 0) {
+        error("UDP socket sendto failed: %s\n", strerror(errno));
+        return 0;
+    }
     while(1) {
         struct timeval tv = {5L, 0L};
         int rv;

@@ -34,7 +34,7 @@ struct tourhdr {
 #define TOUR_SIZE(ptr) (sizeof(struct tourhdr) + ((ptr)->len)*sizeof(struct in_addr))
 
 int valid_args(int argc, char **argv);
-int start_tour(int rt, int udp_recv, int numhosts, char **argv);
+int start_tour(int rt, int udp_recv, int udp_send, int numhosts, char **hosts);
 int run_tour(int rt, int udp_recv, int udp_send, int binded);
 int end_tour(int udp_recv, int udp_send);
 
