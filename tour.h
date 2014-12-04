@@ -3,6 +3,7 @@
 #include <time.h>
 #include <limits.h>
 #include <inttypes.h>
+#include <sys/queue.h>
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <netinet/in.h>
@@ -22,16 +23,16 @@
 #define MCAST_IFNAME "eth0"
 #define MCAST_ADDR "233.3.3.3"
 
+#define TOUR_MAXPACKET (IP_MAXPACKET - sizeof(struct ip))
+#define TOUR_MAXIPS ((TOUR_MAXPACKET - sizeof(struct tourhdr)) / sizeof(struct in_addr))
+#define TOUR_SIZE(ptr) (sizeof(struct tourhdr) + ((ptr)->len)*sizeof(struct in_addr))
+
 struct tourhdr {
     struct in_addr mcastip; /* The multicast IP to join */
     short mcastport;        /* The multicast port to join */
     short len;              /* Number of IPs in the ips list */
     struct in_addr ips[];   /* Variable size list of IP addresses */
 };
-
-#define TOUR_MAXPACKET (IP_MAXPACKET - sizeof(struct ip))
-#define TOUR_MAXIPS ((TOUR_MAXPACKET - sizeof(struct tourhdr)) / sizeof(struct in_addr))
-#define TOUR_SIZE(ptr) (sizeof(struct tourhdr) + ((ptr)->len)*sizeof(struct in_addr))
 
 int valid_args(int argc, char **argv);
 int start_tour(int rt, int udp_recv, int udp_send, int numhosts, char **hosts);

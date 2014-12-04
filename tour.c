@@ -133,6 +133,10 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
     fd_set rset;
     int max_fd, err;
     pthread_t recvthread;
+    struct head_pingt head;
+
+    /* Initialize the list of pinging threads */
+    LIST_INIT(&head);
 
     /* start the ping recv thread */
     if((err = pthread_create(&recvthread, NULL, run_ping_recv, NULL)) != 0) {
@@ -171,7 +175,6 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
         }
 
         if(FD_ISSET(rt, &rset)) {
-            /* Forward Tour message or end the tour if this is last node */
             char packet[IP_MAXPACKET];
             struct ip *iph = (struct ip *)packet;
             struct tourhdr *tour = (struct tourhdr *)(packet + sizeof(struct ip));
@@ -226,8 +229,11 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
                     binded = 1;
                 }
                 /* Start pinging */
+                if(!create_pingt(&head, src.sin_addr)) {
+                    goto CLEANUP_THREADS;
+                }
 
-                /* Forward tour packet */
+                /* Forward Tour message or end the tour if this is last node */
                 if(tour->len > 0) {
                     if(!forward_tour(rt, tour)) {
                         goto CLEANUP_THREADS;
@@ -252,12 +258,12 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
     }
 
     /* Halt all pinging activity */
-    if((err = pthread_cancel(recvthread)) != 0){
-        error("pthread_cancel: %s\n", strerror(err));
-        return 0;
+    if((err = pthread_cancel(recvthread)) ||(err = pthread_join(recvthread, NULL))){
+        error("failed to cancel ping recv thread: %s\n", strerror(err));
+        goto CLEANUP_TLIST;
     }
-    if((err = pthread_join(recvthread, NULL)) != 0){
-        error("pthread_join: %s\n", strerror(err));
+    /* Clean up all the pinging threads */
+    if(!destroy_pingt(&head)) {
         return 0;
     }
 
@@ -269,6 +275,8 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
 CLEANUP_THREADS:
     pthread_cancel(recvthread);
     pthread_join(recvthread, NULL);
+CLEANUP_TLIST:
+    destroy_pingt(&head);
     return 0;
 }
 

@@ -49,16 +49,24 @@ void *run_ping_send(void *arg) {
     /* Fill out ICMP echo request */
     icmph->type = ICMP_ECHO;
     icmph->un.echo.id = htons((short)self);
+
     while(1) {
         struct sockaddr_in tgt;
         struct hwaddr dst;
         /* Increment echo sequence number */
         icmph->un.echo.sequence = htons(seq++);
+        /* Recalculate the checksum */
+        icmph->checksum = 0;
+        icmph->checksum = in_cksum((uint16_t *)icmph, sizeof(struct icmphdr));
+
         memset(&tgt, 0, sizeof(tgt));
         tgt.sin_addr.s_addr = args.tgtip.s_addr;
         tgt.sin_family = AF_INET;
         /* Request MAC address of destination IP */
-        areq((struct sockaddr *)&tgt, sizeof(tgt), &dst);
+        if(!areq((struct sockaddr *)&tgt, sizeof(tgt), &dst)) {
+            /* error("areq for %s failed: %s\n", inet_ntoa(tgt.sin_addr), strerror(errno)); */
+            break;
+        }
         /* Send ECHO request */
         if(!send_frame(sock, packet, sizeof(packet), dst.sll_addr, args.src.if_haddr, args.src.if_index)) {
             break;
@@ -157,10 +165,105 @@ void *run_ping_recv(void *unused) {
             debug("Node %s. Ignoring non-ping ICMP message.\n", host);
         } else if(nread < sizeof(struct ip) + sizeof(struct icmphdr)) {
             debug("Node %s. Received %d bytes. Too small to be ICMP ping.\n", host, nread);
+        } else if(in_cksum((uint16_t *)icmph, sizeof(struct icmphdr)) != 0) {
+            debug("Node %s. Received currupt ICMP echo response.\n", host);
         } else {
             info("Node %s. Received ping from: %s\n", host, inet_ntoa(iph->ip_src));
         }
     }
     pthread_cleanup_pop(1);
     pthread_exit(NULL);
+}
+
+uint16_t in_cksum(uint16_t *addr, int len) {
+    int				nleft = len;
+    uint32_t		sum = 0;
+    uint16_t		*w = addr;
+    uint16_t		answer = 0;
+
+    /*
+     * Our algorithm is simple, using a 32 bit accumulator (sum), we add
+     * sequential 16 bit words to it, and at the end, fold back all the
+     * carry bits from the top 16 bits into the lower 16 bits.
+     */
+    while (nleft > 1)  {
+        sum += *w++;
+        nleft -= 2;
+    }
+
+    /* mop up an odd byte, if necessary */
+    if (nleft == 1) {
+        *(unsigned char *)(&answer) = *(unsigned char *)w ;
+        sum += answer;
+    }
+
+    /* add back carry outs from top 16 bits to low 16 bits */
+    sum = (sum >> 16) + (sum & 0xffff);	/* add hi 16 to low 16 */
+    sum += (sum >> 16);			/* add carry */
+    answer = (uint16_t) ~sum;   /* Complement and truncate to 16 bits */
+    return(answer);
+}
+
+/* Ping thread creation and management */
+
+/**
+ * @head  Pointer to a list of pingt structs
+ * @tgtip IP address of target node of the pinging thread
+ *
+ */
+int create_pingt(struct head_pingt *head, struct in_addr tgtip) {
+    struct pingt *new, *cur;
+    int err;
+
+    LIST_FOREACH(cur, head, list) {
+        if(cur->arg.tgtip.s_addr == tgtip.s_addr) {
+            info("A thread is already pinging %s.\n", inet_ntoa(tgtip));
+            return 1;
+        }
+    }
+
+    if((new = calloc(1, sizeof(struct pingt))) == NULL) {
+        error("malloc failed: %s\n", strerror(errno));
+        return 0;
+    }
+
+    new->arg.tgtip.s_addr = tgtip.s_addr;
+    /* Create the thread */
+    if((err = pthread_create(&new->tid, NULL, run_ping_send, &new->arg)) != 0) {
+        error("failed to create ping thread: %s\n", strerror(err));
+        free(new);
+        return 0;
+    }
+    debug("Successfully started thread %u\n", (uint)new->tid);
+    /* Insert into the list */
+    LIST_INSERT_HEAD(head, new, list);
+    return 1;
+}
+
+int destroy_pingt(struct head_pingt *head) {
+    struct pingt *cur;
+    int err, status = 1;
+
+
+    /* Cancel all the threads, OKAY if this fails */
+    LIST_FOREACH(cur, head, list) {
+        pthread_cancel(cur->tid);
+    }
+    /* Join all the threads, NOT okay if this fails */
+    LIST_FOREACH(cur, head, list) {
+        if ((err = pthread_join(cur->tid, NULL)) != 0) {
+            error("failed to join ping thread %u: %s\n", (uint)cur->tid,
+                    strerror(err));
+            status = 1;
+        } else {
+            debug("Successfully joined thread %u\n", (uint)cur->tid);
+        }
+    }
+    /* Free the list */
+    while(!LIST_EMPTY(head)) {
+        cur = LIST_FIRST(head);
+        LIST_REMOVE(cur, list);
+        free(cur);
+    }
+    return status;
 }
