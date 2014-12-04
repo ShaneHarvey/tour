@@ -11,7 +11,7 @@ all: $(BINS)
 debug: CFLAGS += -DDEBUG -g
 debug: $(BINS)
 
-arp_%: arp.o get_hw_addrs.o
+arp_%: arp.o get_hw_addrs.o cache.o
 	$(CC) -o $@ $^
 
 tour_%: tour.o get_hw_addrs.o api.o ping.o
