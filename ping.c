@@ -3,6 +3,7 @@
 #include "api.h"
 
 extern char *host;
+extern struct in_addr hostip;
 
 static void close_sock(void *sockptr) {
     int sock = *(int *)sockptr;
@@ -37,7 +38,15 @@ void *run_ping_send(void *arg) {
     }
     /*TODO: FINISH Init the ICMP (Echo data?) and IP headers */
     memset(packet, 0, sizeof(packet));
+    iph->ip_src.s_addr = hostip.s_addr;
     iph->ip_dst.s_addr = args.tgtip.s_addr;
+    iph->ip_p = IPPROTO_IP;
+    iph->ip_id = 0; //???htons(IPID_TOUR);
+    iph->ip_hl = sizeof(struct ip) / 4;
+    iph->ip_len = htons(sizeof(packet));
+    iph->ip_v = IPVERSION;
+    iph->ip_ttl = 10;
+    /* Fill out ICMP echo request */
     icmph->type = ICMP_ECHO;
     icmph->un.echo.id = htons((short)self);
     while(1) {

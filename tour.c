@@ -346,7 +346,7 @@ int send_ip(int rt, void *data, size_t len, struct in_addr dstip) {
     iph->ip_hl = sizeof(struct ip) / 4;
     iph->ip_len = htons(sizeof(struct ip) + len);
     iph->ip_v = IPVERSION;
-    iph->ip_ttl = 128;
+    iph->ip_ttl = 10;
 
     /* Copy data into packet */
     memcpy(packet + sizeof(struct ip), data, len);
