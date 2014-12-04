@@ -28,6 +28,8 @@ void ntoh_msg(struct arpreq *msg);
 
 bool isDestination(struct hwa_info *devices, Cache *cache);
 
+int maxfd(int pf_socket, int unix_domain, Cache *cache);
+
 /* Signal handling for cleanup */
 void cleanup(int signum);
 void set_sig_cleanup(void);

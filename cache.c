@@ -97,3 +97,19 @@ Cache *getFromCache(Cache *list, Cache *entry) {
     }
     return found;
 }
+
+Cache *getCacheBySocket(Cache *list, int sock) {
+    Cache *found = NULL;
+    if(list != NULL) {
+        Cache *node = list;
+        while(node != NULL) {
+            if(node->domain_socket == sock) {
+                found = node;
+                break;
+            } else {
+                node = node->next;
+            }
+        }
+    }
+    return found;
+}
