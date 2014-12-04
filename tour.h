@@ -9,6 +9,7 @@
 #include <netinet/udp.h>
 #include <netpacket/packet.h>
 #include <net/ethernet.h>
+#include <net/if.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/ip.h>
@@ -16,6 +17,10 @@
 /* Used as the tour IP protocol type */
 #define IPPROTO_TOUR 237
 #define IPID_TOUR 0xF31F
+
+/* Interface for multicast */
+#define MCAST_IFNAME "eth0"
+#define MCAST_ADDR "233.3.3.3"
 
 struct tourhdr {
     struct in_addr mcastip; /* The multicast IP to join */
@@ -29,9 +34,9 @@ struct tourhdr {
 #define TOUR_SIZE(ptr) (sizeof(struct tourhdr) + ((ptr)->len)*sizeof(struct in_addr))
 
 int valid_args(int argc, char **argv);
-int start_tour(int rt, int udp, int numhosts, char **argv);
-int run_tour(int rt, int udp, int binded);
-int end_tour(int udp);
+int start_tour(int rt, int udp_recv, int numhosts, char **argv);
+int run_tour(int rt, int udp_recv, int udp_send, int binded);
+int end_tour(int udp_recv, int udp_send);
 
 /* Helper functions */
 int forward_tour(int rt, struct tourhdr *tour);
