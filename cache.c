@@ -28,7 +28,8 @@ bool isSameCache(Cache *c1, Cache *c2) {
             // Now we actually have to compare
             // check for same hwaddress and same ifi_index
             equal = c1->sll_ifindex == c2->sll_ifindex &&
-                    !memcmp(c1->if_haddr, c2->if_haddr, IFHWADDRLEN);
+                    !memcmp(c1->if_haddr, c2->if_haddr, IFHWADDRLEN) &&
+                    !memcmp(&(c1->ipaddress), &(c2->ipaddress), sizeof(struct sockaddr));
         }
     }
     return equal;
@@ -41,7 +42,7 @@ bool updateCache(Cache *list, Cache *entry) {
         while(node != NULL) {
             if(isSameCache(node, entry)) {
                 node->ipaddress = entry->ipaddress;
-                node->domain_socket = entry->domain_socket;
+                // node->domain_socket = entry->domain_socket;
                 node->sll_ifindex = entry->sll_ifindex;
                 node->sll_hatype = entry->sll_hatype;
                 memcpy(node->if_haddr, entry->if_haddr, IFHWADDRLEN);

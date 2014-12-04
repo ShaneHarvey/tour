@@ -11,7 +11,7 @@
 // (v) a Unix-domain connection-socket descriptor for a connected client
 
 typedef struct Cache {
-    struct sockaddr *ipaddress;
+    struct sockaddr ipaddress;
     int domain_socket;
     int sll_ifindex;
     unsigned char if_haddr[IFHWADDRLEN];
