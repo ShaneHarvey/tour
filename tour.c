@@ -3,7 +3,6 @@
 
 char host[HOST_NAME_MAX];  /* Hostname running ODR, eg vm2 */
 struct in_addr hostip;     /* IP of this host */
-unsigned int mcastindex;   /* Multicast interface index */
 
 int main(int argc, char **argv) {
     int rt, udp_recv, udp_send, opt, status = EXIT_FAILURE, binded = 0;
@@ -40,11 +39,6 @@ int main(int argc, char **argv) {
     } else {
         getipbyhost(host, &hostip);
         info("Tour running on node %s, IP %s\n", host, inet_ntoa(hostip));
-    }
-
-    if((mcastindex = if_nametoindex(MCAST_IFNAME)) == 0) {
-        error("failed to get %s index: %s\n", MCAST_IFNAME, strerror(errno));
-        goto CLOSE_UDP_SEND;
     }
 
     if(argc > 1) {
@@ -100,7 +94,7 @@ int start_tour(int rt, int udp_recv, int udp_send, int numhosts, char **hosts) {
 
     inet_aton(MCAST_ADDR, &mcastip);
     /* Join the multicast group */
-    if (!mcast_join(udp_recv, mcastip, mcastindex)) {
+    if (!mcast_join(udp_recv, mcastip, 0)) {
         return 0;
     }
     /* Connect to the multicast address */
@@ -220,7 +214,7 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
                         goto CLEANUP_THREADS;
                     }
                     /* Join the multicast group */
-                    if (!mcast_join(udp_recv, tour->mcastip, mcastindex)) {
+                    if (!mcast_join(udp_recv, tour->mcastip, 0)) {
                         goto CLEANUP_THREADS;
                     }
                     info("Node %s. Binded to port %hu, joined multicast "

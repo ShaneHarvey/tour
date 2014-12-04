@@ -20,7 +20,6 @@
 #define IPID_TOUR 0xF31F
 
 /* Interface for multicast */
-#define MCAST_IFNAME "eth0"
 #define MCAST_ADDR "233.3.3.3"
 
 #define TOUR_MAXPACKET (IP_MAXPACKET - sizeof(struct ip))
