@@ -82,12 +82,12 @@ static char* test_update_cache(void) {
     Cache *node = malloc(sizeof(Cache));
     /* Copy the first node in the list */
     memcpy(node, list, sizeof(Cache));
-    /* Change a value in the node */
-    node->domain_socket = 1337;
+    /* Change a value in the node used in isSameCache */
+    node->sll_hatype = 1337;
     /* Attempt to update the node */
     mu_assert("Failed to update an existing cache entry.", updateCache(list, node) == true);
     /* Check that the value of the head node is actually changed */
-    mu_assert("Update function failed to update the cache entry.", node->domain_socket == list->domain_socket);
+    mu_assert("Update function failed to update the cache entry.", node->sll_hatype == list->sll_hatype);
     /* Attempt to update a cache entry that doesn't exist */
     init_cache(node, 18);
     mu_assert("Updated a cache entry that does not exist.", updateCache(list, node) == false);
