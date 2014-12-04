@@ -256,6 +256,10 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
         error("pthread_cancel: %s\n", strerror(err));
         return 0;
     }
+    if((err = pthread_join(recvthread, NULL)) != 0){
+        error("pthread_join: %s\n", strerror(err));
+        return 0;
+    }
 
     if(!end_tour(udp_recv, udp_send)) {
         error("Failed to end tour %s\n", strerror(errno));
@@ -270,10 +274,6 @@ CLEANUP_THREADS:
 
 int end_tour(int udp_recv, int udp_send) {
     char buf[1024];
-    info("Tour reached final host\n");
-    /* Spend 5 seconds pinging */
-    sleep(5);
-
     snprintf(buf, sizeof(buf), "<<<<< Node %s. I am a member of the group. "
             ">>>>>", host);
     info("Node %s. Sending: %s\n", host, buf);
@@ -300,7 +300,7 @@ int end_tour(int udp_recv, int udp_send) {
             char data[IP_MSS];
             int nread;
             struct sockaddr_in source;
-            socklen_t slen;
+            socklen_t slen = sizeof(source);
             memset(data, 0, sizeof(data));
             /* UDP socket is readable, print multicast message */
             nread = recvfrom(udp_recv, data, sizeof(data), 0, (struct sockaddr *)
