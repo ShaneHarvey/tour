@@ -17,8 +17,6 @@ set(SOURCE_FILES_TOUR
     ping.h
     common.h
     debug.h
-    get_hw_addrs.c
-    get_hw_addrs.h
     tour.c
     tour.h)
 
