@@ -53,17 +53,59 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
     int running = 1;
     // select vars
     fd_set rset;
-    int max_fd = unix_domain > pf_socket ? unix_domain + 1 : pf_socket + 1;
+    int max_fd;
+    Cache *current = NULL;
+    char arp_request[sizeof(struct arpreq) + 1];
     while(running) {
-        /* Now wait to receive the transmissions */
+        /* Find the max fd */
+        max_fd = maxfd(pf_socket, unix_domain, cache);
+        /* set all the server fd's */
         FD_ZERO(&rset);
         FD_SET(unix_domain, &rset);
         FD_SET(pf_socket, &rset);
+        /* Set the client domain sockets */
+        current = cache;
+        while(current != NULL) {
+            FD_SET(current->domain_socket, &rset);
+        }
+        /* Now wait to receive the transmissions */
+        // TODO: Handle select error code
         select(max_fd, &rset, NULL, NULL, NULL);
+        /* See if any of the unix domain sockets in the cache are readable */
+        current = cache;
+        while(current != NULL) {
+            if(FD_ISSET(current->domain_socket, &rset)) {
+                /* See what we were sent */
+                int bytes_read;
+                if((bytes_read = recv(current->domain_socket, arp_request, sizeof(arp_request), 0)) > 0) {
+                    /* Send back to the client */
+                    // TODO: Start here
+                    send(current->domain_socket, NULL /* buff */, 0 /* len */, 0);
+                } else {
+                    /* If we read zero bytes then the socket closed */
+                    close(current->domain_socket);
+                    if(!removeFromCache(&cache, current)) {
+                        error("Failed to remove the cache entry from the cache.");
+                    }
+                }
+            }
+        }
         /* Handle unix domain socket communications */
         if(FD_ISSET(unix_domain, &rset)) {
-            // Communicate with areq function
-            // If you read zero the file was closed (cache entry)
+            /* Communicate with areq function */
+            struct sockaddr_un remote;
+            socklen_t addrlen;
+            /* Accept the incomming connection */
+            int sfd = accept(unix_domain, (struct sockaddr*)&remote, &addrlen);
+            /* Double check and make sure it doesn't exist */
+            /* TODO: What if it does exist ? */
+            Cache *ce = getCacheBySocket(cache, sfd);
+            if(ce == NULL) {
+                /* Build a partial cache entry */
+                ce = malloc(sizeof(Cache));
+            }
+            /* Update the fd */
+            ce->domain_socket = sfd;
         }
         /* handle PF_PACKET socket comminications */
         if(FD_ISSET(pf_socket, &rset)) {
@@ -99,6 +141,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                 cache_template->sll_hatype = llsrc.sll_hatype;
                 memcpy(cache_template->if_haddr, llsrc.sll_addr, IFHWADDRLEN);
                 // TODO: Set Unix domain socket
+                // TODO: Might have to move some of this logic because was confused
                 /* Try to get this cache entry */
                 Cache *ce = getFromCache(cache, cache_template);
                 /* Determine where this messages destination is */
@@ -107,7 +150,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                     if(!addToCache(&cache, cache_template)) {
                         error("Failed to add new cache entry.\n");
                     }
-                } else if(ce != NULL){
+                } else if(ce != NULL) {
                     // Update the cache entry
                     if(!updateCache(cache, cache_template)) {
                         error("Failed to update an existing cache entry.\n");
@@ -139,6 +182,14 @@ int create_unix_domain(void) {
         } else if(chmod(ARP_WELL_KNOWN_PATH, S_IRUSR | S_IWUSR | S_IXUSR | S_IWGRP | S_IWOTH) < 0) {
             /* chmod the file to world writable (722) so any process can use arp  */
             error("chmod failed: %s\n", strerror(errno));
+            /* Close the unix domain socket */
+            close(unix_domain);
+            /* remove the file */
+            unlink(ARP_WELL_KNOWN_PATH);
+            /* Set the domain socket to -1 */
+            unix_domain = -1;
+        } else if(listen(unix_domain, 5) < 0) {
+            error("Failed to listen on arp unix domain socket.\n");
             /* Close the unix domain socket */
             close(unix_domain);
             /* remove the file */
@@ -235,4 +286,16 @@ bool isDestination(struct hwa_info *devices, Cache *cache) {
         }
     }
     return isdest;
+}
+
+int maxfd(int pf_socket, int unix_domain, Cache *cache) {
+    int maxfd = pf_socket > unix_domain ? pf_socket : unix_domain;
+    if(cache != NULL) {
+        Cache *current = cache;
+        while(current != NULL) {
+            maxfd = maxfd > current->domain_socket ? maxfd : current->domain_socket;
+            current = current->next;
+        }
+    }
+    return maxfd;
 }
