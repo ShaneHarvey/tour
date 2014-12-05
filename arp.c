@@ -84,21 +84,24 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                 /* Receieve the packet */
                 if((bytes_read = recv(current->domain_socket, arp_request, sizeof(arp_request), 0)) > 0) {
                     struct arpreq *ar = (struct arpreq*)arp_request;
-                    Cache *ce = getCacheBySocket(cache, current->domain_socket);
-                    if(ce == NULL) {
-                        // TODO: What to do if we have no connection information?
-                    } else if(ce->state == STATE_COMPLETE) {
+                    if(current->state == STATE_COMPLETE) {
                         // Immediatly respond and close the unix domain socket.
                         // send(current->domain_socket, buff , len, 0);
-                    } else if(ce->state == STATE_CONNECTION){
+                    } else if(current->state == STATE_CONNECTION){
                         // Create incomplete cache entry
                         // (iii) sll_ifindex
                         // (iv) sll_hatype
-                        memcpy(&ce->ipaddress, &ar->addr, sizeof(struct sockaddr));
-                    } else if(ce->state == STATE_INCOMPLETE) {
+                        memcpy(&current->ipaddress, &ar->addr, sizeof(struct sockaddr));
+                        /* Send out ARP packet */
+                        /*
+                        Ethernet dest addr | Ethernet src addr | frame type | hard type | prot type | hard size | prot size | sender ethernet addr | sender ip | target ethernet | target ipaddr
+                        6-bytes            | 6-bytes           | 2-bytes    | 2-bytes   | 2-bytes   | 1-byte    | 1-byte    | 6 bytes              | 4 bytes   | 6 bytes         | 4 bytes
+                        Ethernet header         14-bytes                    |   28 byte- arp
+                        */
+                    } else if(current->state == STATE_INCOMPLETE) {
                         // What to do if we have an incomplete cache entry ?
                     } else {
-                        error("Cache entry has unknown state %d\n", ce->state);
+                        error("Cache entry has unknown state %d\n", current->state);
                     }
                 } else {
                     /* If we read zero bytes then the socket closed */
@@ -108,6 +111,8 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                     }
                 }
             }
+            // Get the next node
+            current = current->next;
         }
         /* Handle unix domain socket communications */
         if(FD_ISSET(unix_domain, &rset)) {
