@@ -113,3 +113,35 @@ Cache *getCacheBySocket(Cache *list, int sock) {
     }
     return found;
 }
+
+Cache *getCacheByHWAddr(Cache *list, unsigned char *if_haddr) {
+    Cache *found = NULL;
+    if(list != NULL && if_haddr != NULL) {
+        Cache *node = list;
+        while(node != NULL) {
+            if(!memcmp(node->if_haddr, if_haddr, IFHWADDRLEN)) {
+                found = node;
+                break;
+            } else {
+                node = node->next;
+            }
+        }
+    }
+    return found;
+}
+
+Cache *getCacheByIpAddr(Cache *list, struct sockaddr *ipaddress) {
+    Cache *found = NULL;
+    if(list != NULL && ipaddress != NULL) {
+        Cache *node = list;
+        while(node != NULL) {
+            if(!memcmp(&(node->ipaddress), &ipaddress, sizeof(struct sockaddr))) {
+                found = node;
+                break;
+            } else {
+                node = node->next;
+            }
+        }
+    }
+    return found;
+}

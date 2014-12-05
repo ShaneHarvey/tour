@@ -26,5 +26,6 @@ bool removeFromCache(Cache **list, Cache *entry);
 bool isSameCache(Cache *c1, Cache *c2);
 Cache *getFromCache(Cache *list, Cache *entry);
 Cache *getCacheBySocket(Cache *list, int sock);
+Cache *getCacheByHWAddr(Cache *list, unsigned char *if_haddr);
 
 #endif
