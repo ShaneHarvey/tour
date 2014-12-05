@@ -27,8 +27,8 @@ bool isSameCache(Cache *c1, Cache *c2) {
         } else {
             // Now we actually have to compare
             // check for same hwaddress and same ifi_index
-            equal = c1->sll_ifindex == c2->sll_ifindex &&
-                    !memcmp(c1->if_haddr, c2->if_haddr, IFHWADDRLEN) &&
+            equal = c1->hw.sll_ifindex == c2->hw.sll_ifindex &&
+                    !memcmp(c1->hw.sll_addr, c2->hw.sll_addr, c2->hw.sll_halen) &&
                     !memcmp(&(c1->ipaddress), &(c2->ipaddress), sizeof(struct sockaddr));
         }
     }
@@ -43,9 +43,9 @@ bool updateCache(Cache *list, Cache *entry) {
             if(isSameCache(node, entry)) {
                 node->ipaddress = entry->ipaddress;
                 // node->domain_socket = entry->domain_socket;
-                node->sll_ifindex = entry->sll_ifindex;
-                node->sll_hatype = entry->sll_hatype;
-                memcpy(node->if_haddr, entry->if_haddr, IFHWADDRLEN);
+                node->hw.sll_ifindex = entry->hw.sll_ifindex;
+                node->hw.sll_hatype = entry->hw.sll_hatype;
+                memcpy(node->hw.sll_addr, entry->hw.sll_addr, entry->hw.sll_halen);
                 success = true;
                 break;
             } else {
@@ -119,7 +119,7 @@ Cache *getCacheByHWAddr(Cache *list, unsigned char *if_haddr) {
     if(list != NULL && if_haddr != NULL) {
         Cache *node = list;
         while(node != NULL) {
-            if(!memcmp(node->if_haddr, if_haddr, IFHWADDRLEN)) {
+            if(!memcmp(node->hw.sll_addr, if_haddr, node->hw.sll_halen)) {
                 found = node;
                 break;
             } else {

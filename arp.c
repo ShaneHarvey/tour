@@ -55,7 +55,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
     fd_set rset;
     int max_fd;
     Cache *current = NULL;
-    char arp_request[sizeof(struct arpreq) + 1];
+    char arp_request[sizeof(struct areq) + 1];
     while(running) {
         /* Find the max fd */
         max_fd = maxfd(pf_socket, unix_domain, cache);
@@ -82,21 +82,21 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                 int bytes_read;
                 /* Receieve the packet */
                 if((bytes_read = recv(current->domain_socket, arp_request, sizeof(arp_request), 0)) > 0) {
-                    struct arpreq *ar = (struct arpreq*)arp_request;
+                    struct areq *ar = (struct areq*)arp_request;
                     if(current->state == STATE_COMPLETE) {
                         // Immediatly respond and close the unix domain socket.
                         // send(current->domain_socket, buff , len, 0);
                     } else if(current->state == STATE_CONNECTION){
                         // Create incomplete cache entry
-                        // (iii) sll_ifindex
-                        // (iv) sll_hatype
+                        struct hwa_info *device = NULL;
+                        current->state = STATE_INCOMPLETE;
                         memcpy(&current->ipaddress, &ar->addr, sizeof(struct sockaddr));
+                        /* Build ARP packet */
+
                         /* Send out ARP packet */
-                        /*
-                        Ethernet dest addr | Ethernet src addr | frame type | hard type | prot type | hard size | prot size | sender ethernet addr | sender ip | target ethernet | target ipaddr
-                        6-bytes            | 6-bytes           | 2-bytes    | 2-bytes   | 2-bytes   | 1-byte    | 1-byte    | 6 bytes              | 4 bytes   | 6 bytes         | 4 bytes
-                        Ethernet header         14-bytes                    |   28 byte- arp
-                        */
+                        for(device = devices; device != NULL; device = device->hwa_next) {
+                            send_frame(pf_socket, NULL, 0, NULL, device->if_haddr, device->if_index);
+                        }
                     } else if(current->state == STATE_INCOMPLETE) {
                         // What to do if we have an incomplete cache entry ?
                     } else {
@@ -144,14 +144,14 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
         if(FD_ISSET(pf_socket, &rset)) {
             /* ARP Request messages caught here */
             struct ethhdr eh;
-            struct arpreq recvmsg;
+            struct areq recvmsg;
             struct sockaddr_ll llsrc;
             int read = 0;
             // int srcindex = 0;
             /* zero out structs */
             memset(&eh, 0, sizeof(struct ethhdr));
             memset(&llsrc, 0, sizeof(struct sockaddr_ll));
-            memset(&recvmsg, 0, sizeof(struct arpreq));
+            memset(&recvmsg, 0, sizeof(struct areq));
             if((read = recv_frame(pf_socket, &eh, &recvmsg, &llsrc)) < 0) {
                 /* Didn't have a successful read */
                 success = EXIT_FAILURE;
@@ -170,10 +170,10 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                 Cache *cache_template = malloc(sizeof(Cache));
                 memset(cache_template, 0, sizeof(Cache));
                 /* Set fields */
-                cache_template->sll_ifindex = llsrc.sll_ifindex;
+                cache_template->hw.sll_ifindex = llsrc.sll_ifindex;
                 cache_template->ipaddress = recvmsg.addr;
-                cache_template->sll_hatype = llsrc.sll_hatype;
-                memcpy(cache_template->if_haddr, llsrc.sll_addr, IFHWADDRLEN);
+                cache_template->hw.sll_hatype = llsrc.sll_hatype;
+                memcpy(cache_template->hw.sll_addr, llsrc.sll_addr, IFHWADDRLEN);
                 /* Try to get this cache entry */
                 Cache *ce = getFromCache(cache, cache_template);
                 /* Determine where this messages destination is */
@@ -235,7 +235,7 @@ int create_unix_domain(void) {
 
 int create_pf_socket(void) {
     int pf_socket = -1;
-    if((pf_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ODR))) < 0) {
+    if((pf_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP_SH))) < 0) {
         error("Failed to create PF_SOCKET\n");
     }
     return pf_socket;
@@ -266,11 +266,12 @@ void set_sig_cleanup(void) {
 * the message into host order as well.
 * @Return is the same as recvfrom(2)
 */
-ssize_t recv_frame(int pf_socket, struct ethhdr *eh, struct arpreq *recvmsg, struct sockaddr_ll *src) {
+ssize_t recv_frame(int pf_socket, struct ethhdr *eh, struct areq *recvmsg, struct sockaddr_ll *src) {
     char frame[ETH_FRAME_LEN]; /* MAX ethernet frame length 1514 */
     socklen_t srclen;
     ssize_t nread;
 
+    memset(frame, 0, sizeof(frame));
     memset(src, 0, sizeof(struct sockaddr_ll));
     srclen = sizeof(struct sockaddr_ll);
     if((nread = recvfrom(pf_socket, frame, ETH_FRAME_LEN, 0,
@@ -289,11 +290,11 @@ ssize_t recv_frame(int pf_socket, struct ethhdr *eh, struct arpreq *recvmsg, str
 }
 
 /*
-* Converts arpreq from Network to Host byte order
+* Converts areq from Network to Host byte order
 */
-void ntoh_msg(struct arpreq *msg) {
+void ntoh_msg(struct areq *msg) {
     // msg->addr = ntohl(msg->addr);
-    msg->addrlen = ntohl(msg->addrlen);
+    // msg->addrlen = ntohl(msg->addrlen);
 }
 
 /*
@@ -355,4 +356,75 @@ int maxfd(int pf_socket, int unix_domain, Cache *cache) {
         }
     }
     return maxfd;
+}
+
+/*
+* Construct and send an ethernet frame to the dst_hwaddr MAC from src_hwaddr
+* MAC going out of interface index ifi_index.
+*
+* @sock       The packet socket to send the frame
+* @payload    The data payload of the ethernet frame
+* @size       The size of the payload
+* @dstmac     The next hop MAC address
+* @srcmac     The outgoing MAC address
+* @ifi_index  The outgoing interface index in HOST byte order
+* @return 1 if succeeded 0 if failed
+*/
+int send_frame(int sock, void *payload, int size, unsigned char *dstmac,
+unsigned char *srcmac, int ifi_index) {
+    char frame[ETH_FRAME_LEN]; /* MAX ethernet frame length 1514 */
+    struct ethhdr *eh = (struct ethhdr *)frame;
+    struct sockaddr_ll dest;
+    int nsent;
+    memset(frame, 0, ETH_FRAME_LEN);
+
+    if(size > ETH_DATA_LEN) {
+        error("Frame data too large: %d\n", size);
+        return 0;
+    }
+    /* Initialize ethernet frame */
+    memcpy(eh->h_dest, dstmac, ETH_ALEN);
+    memcpy(eh->h_source, srcmac, ETH_ALEN);
+    eh->h_proto = htons(ETH_P_IP);
+
+    /* Copy frame data into buffer */
+    memcpy(frame + sizeof(struct ethhdr), payload, size);
+
+    /* Initialize sockaddr_ll */
+    memset(&dest, 0, sizeof(struct sockaddr_ll));
+    dest.sll_family = AF_PACKET;
+    dest.sll_ifindex = ifi_index;
+    memcpy(dest.sll_addr, dstmac, ETH_ALEN);
+    dest.sll_halen = ETH_ALEN;
+    dest.sll_protocol = htons(ETH_P_IP);
+
+    /* print_frame(eh, payload); */
+
+    if((nsent = sendto(sock, frame, size+sizeof(struct ethhdr), 0,
+        (struct sockaddr *)&dest, sizeof(struct sockaddr_ll))) < 0) {
+            error("packet sendto: %s\n", strerror(errno));
+            return 0;
+        } else {
+            debug("Send %d bytes, payload size:%d\n", nsent, size);
+        }
+        return 1;
+}
+
+void build_arp(struct arp_hdr *hdr, struct areq *req) {
+    /*
+    short id;
+    short hard_type;
+    short prot_type;
+    char hard_len;
+    char prot_len;
+    short op;
+    char send_eth[6];
+    char send_ip[4];
+    char target_eth[6];
+    char target_ip[4];
+    ETH_P_ARP_SH
+    */
+    hdr->id = htons(ARP_ID);
+    hdr->hard_type = htons(ARPHRD_ETHER);
+    hdr->prot_type = htons(0);
 }

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include "api.h"
 
 // (i) IP address ;  (ii) HW address ;
 // (iii) sll_ifindex (the interface to be used for reaching the matching pair
@@ -17,10 +18,11 @@
 typedef struct Cache {
     struct sockaddr ipaddress;
     int domain_socket;
-    int sll_ifindex;
-    unsigned char if_haddr[IFHWADDRLEN];
-    unsigned short sll_hatype;
+    // int sll_ifindex;
+    // unsigned char if_haddr[IFHWADDRLEN];
+    // unsigned short sll_hatype;
     int state;
+    struct hwaddr hw;
     struct Cache *next;
     struct Cache *prev;
 } Cache;

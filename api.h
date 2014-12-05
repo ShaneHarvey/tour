@@ -11,12 +11,14 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <net/if_arp.h>
 /* Program headers */
 #include "debug.h"
+#include "api.h"
 #include "common.h"
 
 /* ARP request that the API sends to ARP */
-struct arpreq {
+struct areq {
     struct sockaddr addr;
     socklen_t addrlen;
 };

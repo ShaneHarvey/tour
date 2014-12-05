@@ -4,7 +4,7 @@ int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa) {
     int sock, rv;
     struct sockaddr_un arpaddr;
     socklen_t arplen;
-    struct arpreq req;
+    struct areq req;
     fd_set rset;
     struct timeval tv;
 
