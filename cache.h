@@ -10,12 +10,17 @@
 // <(i) , (ii)>) ;  (iv) sll_hatype ;  and
 // (v) a Unix-domain connection-socket descriptor for a connected client
 
+#define STATE_CONNECTION 0
+#define STATE_INCOMPLETE 1
+#define STATE_COMPLETE 2
+
 typedef struct Cache {
     struct sockaddr ipaddress;
     int domain_socket;
     int sll_ifindex;
     unsigned char if_haddr[IFHWADDRLEN];
     unsigned short sll_hatype;
+    int state;
     struct Cache *next;
     struct Cache *prev;
 } Cache;

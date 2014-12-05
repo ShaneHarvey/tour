@@ -26,7 +26,7 @@ ssize_t recv_frame(int pf_socket, struct ethhdr *eh, struct arpreq *recvmsg,
                    struct sockaddr_ll *src);
 void ntoh_msg(struct arpreq *msg);
 
-bool isDestination(struct hwa_info *devices, Cache *cache);
+bool isDestination(struct hwa_info *devices, struct sockaddr *addr);
 
 int maxfd(int pf_socket, int unix_domain, Cache *cache);
 

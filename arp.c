@@ -69,18 +69,37 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
             FD_SET(current->domain_socket, &rset);
         }
         /* Now wait to receive the transmissions */
-        // TODO: Handle select error code
-        select(max_fd, &rset, NULL, NULL, NULL);
+        if(select(max_fd, &rset, NULL, NULL, NULL) < 0) {
+            error("Failed to select on socket fd's.");
+            running = false;
+            success = EXIT_FAILURE;
+            break;
+        }
         /* See if any of the unix domain sockets in the cache are readable */
         current = cache;
         while(current != NULL) {
             if(FD_ISSET(current->domain_socket, &rset)) {
                 /* See what we were sent */
                 int bytes_read;
+                /* Receieve the packet */
                 if((bytes_read = recv(current->domain_socket, arp_request, sizeof(arp_request), 0)) > 0) {
-                    /* Send back to the client */
-                    // TODO: Start here
-                    send(current->domain_socket, NULL /* buff */, 0 /* len */, 0);
+                    struct arpreq *ar = (struct arpreq*)arp_request;
+                    Cache *ce = getCacheBySocket(cache, current->domain_socket);
+                    if(ce == NULL) {
+                        // TODO: What to do if we have no connection information?
+                    } else if(ce->state == STATE_COMPLETE) {
+                        // Immediatly respond and close the unix domain socket.
+                        // send(current->domain_socket, buff , len, 0);
+                    } else if(ce->state == STATE_CONNECTION){
+                        // Create incomplete cache entry
+                        // (iii) sll_ifindex
+                        // (iv) sll_hatype
+                        memcpy(&ce->ipaddress, &ar->addr, sizeof(struct sockaddr));
+                    } else if(ce->state == STATE_INCOMPLETE) {
+                        // What to do if we have an incomplete cache entry ?
+                    } else {
+                        error("Cache entry has unknown state %d\n", ce->state);
+                    }
                 } else {
                     /* If we read zero bytes then the socket closed */
                     close(current->domain_socket);
@@ -98,7 +117,6 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
             /* Accept the incomming connection */
             int sfd = accept(unix_domain, (struct sockaddr*)&remote, &addrlen);
             /* Double check and make sure it doesn't exist */
-            /* TODO: What if it does exist ? */
             Cache *ce = getCacheBySocket(cache, sfd);
             if(ce == NULL) {
                 /* Build a partial cache entry */
@@ -106,6 +124,13 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
             }
             /* Update the fd */
             ce->domain_socket = sfd;
+            ce->state = STATE_CONNECTION;
+            /* Add incomplete entry to the cache */
+            if(!addToCache(&cache, ce)) {
+                error("Failed to add partial entry to the cache.");
+                /* Free the entry since we can't add it */
+                free(ce);
+            }
         }
         /* handle PF_PACKET socket comminications */
         if(FD_ISSET(pf_socket, &rset)) {
@@ -132,6 +157,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                 If the entry already exists update it, but do not add a new
                 entry to the cache.
                 */
+                // TODO: This might be messed up
                 /* Create a template to search with */
                 Cache *cache_template = malloc(sizeof(Cache));
                 memset(cache_template, 0, sizeof(Cache));
@@ -140,12 +166,10 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                 cache_template->ipaddress = recvmsg.addr;
                 cache_template->sll_hatype = llsrc.sll_hatype;
                 memcpy(cache_template->if_haddr, llsrc.sll_addr, IFHWADDRLEN);
-                // TODO: Set Unix domain socket
-                // TODO: Might have to move some of this logic because was confused
                 /* Try to get this cache entry */
                 Cache *ce = getFromCache(cache, cache_template);
                 /* Determine where this messages destination is */
-                if(ce == NULL && isDestination(devices, cache_template)) {
+                if(ce == NULL && isDestination(devices, &recvmsg.addr)) {
                     // Add the new entry to the cache
                     if(!addToCache(&cache, cache_template)) {
                         error("Failed to add new cache entry.\n");
@@ -154,8 +178,8 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                     // Update the cache entry
                     if(!updateCache(cache, cache_template)) {
                         error("Failed to update an existing cache entry.\n");
+                        free(cache_template);
                     }
-                    free(cache_template);
                 }
             }
         }
@@ -264,6 +288,7 @@ void ntoh_msg(struct arpreq *msg) {
     msg->addrlen = ntohl(msg->addrlen);
 }
 
+/*
 bool isDestination(struct hwa_info *devices, Cache *cache) {
     bool isdest = false;
     if(devices != NULL && cache != NULL) {
@@ -286,6 +311,30 @@ bool isDestination(struct hwa_info *devices, Cache *cache) {
         }
     }
     return isdest;
+}
+*/
+
+bool isDestination(struct hwa_info *devices, struct sockaddr *addr) {
+    bool isDest = false;
+    if(devices != NULL && addr != NULL) {
+        struct hwa_info *current_device = devices;
+        while(current_device != NULL) {
+            if(!memcmp(&(cache->ipaddress), current_device->ip_addr, sizeof(struct sockaddr))) {
+                isDest = true;
+                break;
+            } else {
+                current_device = current_device->hwa_next;
+            }
+        }
+    } else {
+        if(devices == NULL) {
+            warn("Searching empty hwa_info list.\n");
+        }
+        if(addr == NULL) {
+            warn("Searching for null <IP address , HW address> in the hwa_info list.\n");
+        }
+    }
+    return isDest;
 }
 
 int maxfd(int pf_socket, int unix_domain, Cache *cache) {
