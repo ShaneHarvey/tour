@@ -200,6 +200,51 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
     return success;
 }
 
+/**
+ * Handle a an AREQ when a STATE_CONNECTION cache entry is readable
+ *
+ * @pf_socket  The packet socket to broadcast ARP requests
+ * @conn_entry The connected, readable cache entry.
+ * @devices    The list of interfaces
+ *
+ * @return    True on success, false on invalid request or error.
+ */
+int handle_areq(int pf_socket, Cache *conn_entry, struct hwa_info *devices) {
+    int bytes_read;
+    char arp_request[sizeof(struct areq) + 1];
+
+    if(conn_entry->state != STATE_CONNECTION) {
+        error("Cache entry is not in connection state: %d\n", conn_entry->state);
+        exit(EXIT_FAILURE);
+    }
+    /* Receieve the packet */
+    if((bytes_read = recv(conn_entry->domain_socket, arp_request, sizeof(arp_request), 0)) < 0) {
+        error("recv failed on connected socket: %s\n", strerror(errno));
+        return 0;
+    } else if (bytes_read != sizeof(struct areq)) {
+        error("areq message invalid %d bytes should be %zu\n", bytes_read, sizeof(struct areq));
+        return 0;
+    }
+    /* Valid message */
+    struct areq *ar = (struct areq*)arp_request;
+
+    /* TODO: Proccess areq message. Do we already have cache entry? */
+
+    /* Create incomplete cache entry */
+    struct hwa_info *device = NULL;
+    conn_entry->state = STATE_INCOMPLETE;
+    memcpy(&conn_entry->ipaddress, &ar->addr, sizeof(struct sockaddr));
+    /* Build ARP packet */
+
+    /* Send out ARP packet */
+    for(device = devices; device != NULL; device = device->hwa_next) {
+        send_frame(pf_socket, NULL, 0, NULL, device->if_haddr, device->if_index);
+    }
+
+
+    return 1;
+}
+
 int create_unix_domain(void) {
     int unix_domain = -1;
     struct sockaddr_un addr;

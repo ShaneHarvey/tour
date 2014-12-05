@@ -37,6 +37,8 @@ struct arp_hdr {
 int create_unix_domain(void);
 int create_pf_socket(void);
 int run_arp(int unix_domain, int pf_socket, struct hwa_info *devices);
+int handle_areq(int pf_socket, Cache *conn_entry, struct hwa_info *devices);
+
 ssize_t recv_frame(int pf_socket, struct ethhdr *eh, struct areq *recvmsg,
                    struct sockaddr_ll *src);
 void ntoh_msg(struct areq *msg);
