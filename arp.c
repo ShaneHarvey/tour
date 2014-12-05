@@ -65,11 +65,13 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
         FD_SET(pf_socket, &rset);
         /* Set the client domain sockets */
         for(current = cache; current != NULL; current = current->next) {
-            FD_SET(current->domain_socket, &rset);
+            if(current->state == (STATE_CONNECTION | STATE_INCOMPLETE)) {
+                FD_SET(current->domain_socket, &rset);
+            }
         }
         /* Now wait to receive the transmissions */
         if(select(max_fd + 1, &rset, NULL, NULL, NULL) < 0) {
-            error("Failed to select on socket fd's.");
+            error("Failed to select on socket fd's: %s\n", strerror(errno));
             running = false;
             success = EXIT_FAILURE;
             break;
@@ -77,16 +79,18 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
         /* See if any of the unix domain sockets in the cache are readable */
         current = cache;
         while(current != NULL) {
+            /* skip complete entries because they have invalid fd's */
+            if(current->state == STATE_COMPLETE) {
+                current = current->next;
+                continue;
+            }
             if(FD_ISSET(current->domain_socket, &rset)) {
                 /* See what we were sent */
                 int bytes_read;
                 /* Receieve the packet */
-                if((bytes_read = recv(current->domain_socket, arp_request, sizeof(arp_request), 0)) > 0) {
+                if((bytes_read = recv(current->domain_socket, arp_request, sizeof(arp_request), 0)) == sizeof(struct areq)) {
                     struct areq *ar = (struct areq*)arp_request;
-                    if(current->state == STATE_COMPLETE) {
-                        // Immediatly respond and close the unix domain socket.
-                        // send(current->domain_socket, buff , len, 0);
-                    } else if(current->state == STATE_CONNECTION){
+                    if(current->state == STATE_CONNECTION){
                         // Create incomplete cache entry
                         struct hwa_info *device = NULL;
                         current->state = STATE_INCOMPLETE;
@@ -104,6 +108,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                     }
                     current = current->next;
                 } else {
+                    /* Invalid: Did not read sizeof(struct areq) bytes */
                     Cache *rm = current;
                     current = current->next;
                     /* If we read zero bytes then the socket closed */
@@ -351,7 +356,9 @@ int maxfd(int pf_socket, int unix_domain, Cache *cache) {
     if(cache != NULL) {
         Cache *current = cache;
         while(current != NULL) {
-            maxfd = maxfd > current->domain_socket ? maxfd : current->domain_socket;
+            if(current->state == (STATE_CONNECTION | STATE_INCOMPLETE)) {
+                maxfd = maxfd > current->domain_socket ? maxfd : current->domain_socket;
+            }
             current = current->next;
         }
     }
