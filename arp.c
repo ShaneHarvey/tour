@@ -68,7 +68,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
             FD_SET(current->domain_socket, &rset);
         }
         /* Now wait to receive the transmissions */
-        if(select(max_fd, &rset, NULL, NULL, NULL) < 0) {
+        if(select(max_fd + 1, &rset, NULL, NULL, NULL) < 0) {
             error("Failed to select on socket fd's.");
             running = false;
             success = EXIT_FAILURE;
@@ -102,16 +102,20 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                     } else {
                         error("Cache entry has unknown state %d\n", current->state);
                     }
+                    current = current->next;
                 } else {
+                    Cache *rm = current;
+                    current = current->next;
                     /* If we read zero bytes then the socket closed */
-                    close(current->domain_socket);
-                    if(!removeFromCache(&cache, current)) {
+                    close(rm->domain_socket);
+                    if(!removeFromCache(&cache, rm)) {
                         error("Failed to remove the cache entry from the cache.");
                     }
                 }
+            } else {
+                // Get the next node
+                current = current->next;
             }
-            // Get the next node
-            current = current->next;
         }
         /* Handle unix domain socket communications */
         if(FD_ISSET(unix_domain, &rset)) {
