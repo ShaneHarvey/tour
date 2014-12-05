@@ -11,6 +11,9 @@
 #include <pthread.h>
 #include "get_hw_addrs.h"
 
+#define ICMP_DATA_LEN 8
+#define ICMP_ECHO_DATA "PINGPONG"
+
 struct pingarg {
     struct hwa_info src;
     struct in_addr tgtip;
@@ -34,4 +37,6 @@ uint16_t in_cksum(uint16_t *addr, int len);
 
 int create_pingt(struct head_pingt *head, struct in_addr tgtip);
 int destroy_pingt(struct head_pingt *head);
+
+void print_mac(unsigned char *mac);
 #endif

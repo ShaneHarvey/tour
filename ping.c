@@ -2,8 +2,21 @@
 #include "debug.h"
 #include "api.h"
 
-extern char *host;
+extern char host[64];
 extern struct in_addr hostip;
+
+char *macs[10] = {
+        "\x00\x0c\x29\xde\x6a\x62", /* vm10  ..20 */
+        "\x00\x0c\x29\x49\x3f\x5b", /* vm1  ..21 */
+        "\x00\x0c\x29\xd9\x08\xec", /* vm2  ..22 */
+        "\x00\x0c\x29\xa3\x1f\x19", /* vm3  ..23 */
+        "\x00\x0c\x29\x9e\x80\x73", /* vm4  ..24 */
+        "\x00\x0c\x29\xa5\x4b\x46", /* vm5  ..25 */
+        "\x00\x0c\x29\xb5\x32\x3d", /* vm6  ..26 */
+        "\x00\x0c\x29\x64\xe3\xd4", /* vm7  ..27 */
+        "\x00\x0c\x29\xe1\x54\xd1", /* vm8  ..28 */
+        "\x00\x0c\x29\xbb\x12\xaa"  /* vm9  ..29 */
+};
 
 static void close_sock(void *sockptr) {
     int sock = *(int *)sockptr;
@@ -18,13 +31,15 @@ static void close_sock(void *sockptr) {
  * @arg  Pointer to a struct in_addr containing the IP address to ping
  */
 void *run_ping_send(void *arg) {
-    int sock = -1;
+    int sock = -1, icmplen;
     pthread_t self;
-    short seq = 0;
+    ushort seq = 0;
     struct pingarg args;
-    char packet[sizeof(struct ip) + sizeof(struct icmphdr)];
+    char packet[sizeof(struct ip) + ICMP_MINLEN + ICMP_DATA_LEN];
     struct ip *iph = (struct ip *)(packet);
-    struct icmphdr *icmph = (struct icmphdr *)(packet + sizeof(struct ip));
+    struct icmp *icmph = (struct icmp *)(packet + sizeof(struct ip));
+
+    icmplen =  ICMP_MINLEN + ICMP_DATA_LEN;
 
     memcpy(&args, arg, sizeof(struct pingarg));
     self = pthread_self();
@@ -40,24 +55,29 @@ void *run_ping_send(void *arg) {
     memset(packet, 0, sizeof(packet));
     iph->ip_src.s_addr = hostip.s_addr;
     iph->ip_dst.s_addr = args.tgtip.s_addr;
-    iph->ip_p = IPPROTO_IP;
-    iph->ip_id = 0; //???htons(IPID_TOUR);
+    iph->ip_p = IPPROTO_ICMP;
+    iph->ip_off = htons(IP_DF);
+    iph->ip_id = htons((short)self);
     iph->ip_hl = sizeof(struct ip) / 4;
     iph->ip_len = htons(sizeof(packet));
     iph->ip_v = IPVERSION;
     iph->ip_ttl = 10;
+    /* Set checksum for IP header */
+    iph->ip_sum = in_cksum((uint16_t *)iph, sizeof(struct ip));
     /* Fill out ICMP echo request */
-    icmph->type = ICMP_ECHO;
-    icmph->un.echo.id = htons((short)self);
+    icmph->icmp_type = ICMP_ECHO;
+    icmph->icmp_code = 0;
+    icmph->icmp_id = htons((short)self);
+    memcpy(icmph->icmp_data, ICMP_ECHO_DATA, ICMP_DATA_LEN);
 
     while(1) {
         struct sockaddr_in tgt;
         struct hwaddr dst;
         /* Increment echo sequence number */
-        icmph->un.echo.sequence = htons(seq++);
+        icmph->icmp_seq = htons(seq++);
         /* Recalculate the checksum */
-        icmph->checksum = 0;
-        icmph->checksum = in_cksum((uint16_t *)icmph, sizeof(struct icmphdr));
+        icmph->icmp_cksum = 0;
+        icmph->icmp_cksum = in_cksum((uint16_t *)icmph, icmplen);
 
         memset(&tgt, 0, sizeof(tgt));
         tgt.sin_addr.s_addr = args.tgtip.s_addr;
@@ -65,12 +85,29 @@ void *run_ping_send(void *arg) {
         /* Request MAC address of destination IP */
         if(!areq((struct sockaddr *)&tgt, sizeof(tgt), &dst)) {
             /* error("areq for %s failed: %s\n", inet_ntoa(tgt.sin_addr), strerror(errno)); */
-            break;
+            /* break; */
+
+            /*TODO: AREQ, for now Use temporary macs of vms */
+            int offd = (ntohl(args.tgtip.s_addr) & 0xFF) % 10;
+            int offs = (ntohl(hostip.s_addr) & 0xFF) % 10;
+
+            unsigned char *srcmac = (unsigned char *)macs[offs],
+                    *dstmac = (unsigned char *)macs[offd];
+            warn("areq failed for %s using mac: ", inet_ntoa(tgt.sin_addr));
+            print_mac(dstmac);
+            printf("\n");
+            memcpy(dst.sll_addr, dstmac, ETH_ALEN);
+            memcpy(args.src.if_haddr, srcmac, ETH_ALEN);
+
+            //memset(dst.sll_addr, 0, ETH_ALEN);
+            //memset(args.src.if_haddr, 0, ETH_ALEN);
+            args.src.if_index = 2; /* eth0 if index */
         }
         /* Send ECHO request */
         if(!send_frame(sock, packet, sizeof(packet), dst.sll_addr, args.src.if_haddr, args.src.if_index)) {
             break;
         }
+
         /* Sleep for one second, sleep(2) is a pthread cancellation point */
         sleep(1);
     }
@@ -137,38 +174,42 @@ int send_frame(int sock, void *payload, int size, unsigned char *dstmac,
 * @unused  Unused
 */
 void *run_ping_recv(void *unused) {
-    int pg_sock, nread;
+    int pg_sock, nread, iplen, icmplen;
     struct sockaddr_in src;
     socklen_t len;
-    char packet[IP_MSS];
+    char packet[ETH_FRAME_LEN];
     struct ip *iph = (struct ip *)(packet);
-    struct icmphdr *icmph = (struct icmphdr *)(packet + sizeof(struct ip));
-    /* char *icmpdata = (char *)(icmph + sizeof(struct icmphdr)); */
 
     /* Ensures the socket is closed before it is cancelled */
     pthread_cleanup_push(close_sock, &pg_sock);
     /* Create the IP raw socket used to receive ICMP echo responses */
-    if((pg_sock = socket(AF_INET, SOCK_RAW, htons(IPPROTO_ICMP))) < 0) {
+    if((pg_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0) {
         error("failed to create raw socket: %s\n", strerror(errno));
         pthread_exit(NULL);
     }
     /* Listen for echo responses forever */
+    debug("Ping receive thread listening\n");
     while(1) {
         len = sizeof(src);
+        struct icmp *icmph;
         memset(&src, 0, len);
         memset(packet, 0, sizeof(packet));
         nread = recvfrom(pg_sock, packet, sizeof(packet), 0, (struct sockaddr*)&src, &len);
+        iplen = iph->ip_hl * 4;
+        icmplen = nread - iplen;
+        icmph = (struct icmp *)(packet + iplen);
         if(nread < 0) {
             error("ping socket recvfrom failed: %s\n", strerror(errno));
             pthread_exit(NULL);
-        } else if(icmph->type != ICMP_ECHOREPLY) {
+        } else if(icmph->icmp_type != ICMP_ECHOREPLY) {
             debug("Node %s. Ignoring non-ping ICMP message.\n", host);
-        } else if(nread < sizeof(struct ip) + sizeof(struct icmphdr)) {
+        } else if(nread < iplen + ICMP_MINLEN) {
             debug("Node %s. Received %d bytes. Too small to be ICMP ping.\n", host, nread);
-        } else if(in_cksum((uint16_t *)icmph, sizeof(struct icmphdr)) != 0) {
+        } else if(in_cksum((uint16_t *)(packet + iplen), icmplen) != 0) {
             debug("Node %s. Received currupt ICMP echo response.\n", host);
         } else {
-            info("Node %s. Received ping from: %s\n", host, inet_ntoa(iph->ip_src));
+            info("Node %s. Received ping from: %s, data=%s\n", host,
+                    inet_ntoa(iph->ip_src), (char *)&icmph->icmp_data);
         }
     }
     pthread_cleanup_pop(1);
@@ -252,18 +293,23 @@ int destroy_pingt(struct head_pingt *head) {
     /* Join all the threads, NOT okay if this fails */
     LIST_FOREACH(cur, head, list) {
         if ((err = pthread_join(cur->tid, NULL)) != 0) {
-            error("failed to join ping thread %u: %s\n", (uint)cur->tid,
+            error("failed to join ping thread %u: %s\n", (uint) cur->tid,
                     strerror(err));
             status = 1;
         } else {
-            debug("Successfully joined thread %u\n", (uint)cur->tid);
+            debug("Successfully joined thread %u\n", (uint) cur->tid);
         }
     }
     /* Free the list */
-    while(!LIST_EMPTY(head)) {
+    while (!LIST_EMPTY(head)) {
         cur = LIST_FIRST(head);
         LIST_REMOVE(cur, list);
         free(cur);
     }
     return status;
+}
+
+void print_mac(unsigned char *mac) {
+    printf("%02hhX:%02hhX:%02hhX:%02hhX:%02hhX:%02hhX", mac[0], mac[1], mac[2],
+            mac[3], mac[4], mac[5]);
 }
