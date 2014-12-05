@@ -1,7 +1,7 @@
 #include "tour.h"
 #include "ping.h"
 
-char host[HOST_NAME_MAX];  /* Hostname running ODR, eg vm2 */
+char host[64];  /* Hostname running ODR, eg vm2 */
 struct in_addr hostip;     /* IP of this host */
 
 int main(int argc, char **argv) {
@@ -344,6 +344,7 @@ int send_ip(int rt, void *data, size_t len, struct in_addr dstip) {
     iph->ip_src.s_addr = hostip.s_addr;
     iph->ip_dst.s_addr = dstip.s_addr;
     iph->ip_p = IPPROTO_TOUR;
+    iph->ip_off = htons(IP_DF);
     iph->ip_id = htons(IPID_TOUR);
     iph->ip_hl = sizeof(struct ip) / 4;
     iph->ip_len = htons(sizeof(struct ip) + len);
