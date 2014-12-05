@@ -64,8 +64,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
         FD_SET(unix_domain, &rset);
         FD_SET(pf_socket, &rset);
         /* Set the client domain sockets */
-        current = cache;
-        while(current != NULL) {
+        for(current = cache; current != NULL; current = current->next) {
             FD_SET(current->domain_socket, &rset);
         }
         /* Now wait to receive the transmissions */

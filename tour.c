@@ -296,7 +296,7 @@ int end_tour(int udp_recv, int udp_send) {
             return 0;
         } else if(rv == 0) {
             /* Reached 5 second timeout */
-            info("Shutting down Tour application\n");
+            info("Shutting down Tour application...\n");
             break;
         } else {
             char data[IP_MSS];
