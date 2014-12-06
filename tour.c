@@ -191,12 +191,18 @@ int run_tour(int rt, int udp_recv, int udp_send, int binded) {
             } else if(iph->ip_id != htons(IPID_TOUR)) {
                 debug("Ignoring %d byte tour message: wrong IP id field\n", nread);
             } else {
+                struct hostent *he;
+
+                he = gethostbyaddr(&iph->ip_src, sizeof(struct in_addr), AF_INET);
+                if(he != NULL) {
+                    time_t clk = time(NULL);
+                    printf("%.24s: received source routing packet from %s\n",
+                            ctime(&clk), he->h_name);
+                }
                 debug("Recv %d byte raw ip packet.\n", nread);
-                print_ip(iph);
-                print_tour(tour);
+                //print_ip(iph);
+                //print_tour(tour);
                 tour->len = ntohs(tour->len);
-                info("Node %s. Received tour packet: from %s, remaining hops "
-                        "%d\n", host, inet_ntoa(iph->ip_src),  tour->len);
                 if(!binded) {
                     int port;
                     struct sockaddr_in mcastaddr;
@@ -329,7 +335,7 @@ int forward_tour(int rt, struct tourhdr *tour) {
     debug("Forwarding %zu byte tour packet with %d IPs\n", size, tour->len);
 
     tour->len = htons(tour->len);
-    print_tour(tour);
+    //print_tour(tour);
     return send_ip(rt, tour, size, nextip);
 }
 
@@ -358,7 +364,7 @@ int send_ip(int rt, void *data, size_t len, struct in_addr dstip) {
     dstaddr.sin_family = AF_INET;
     dstaddr.sin_addr.s_addr = dstip.s_addr;
 
-    print_ip(iph);
+    //print_ip(iph);
 
     nsent = sendto(rt, packet, sizeof(packet), 0, (struct sockaddr *)&dstaddr, sizeof(dstaddr));
     if(nsent < 0) {

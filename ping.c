@@ -5,19 +5,6 @@
 extern char host[64];
 extern struct in_addr hostip;
 
-char *macs[10] = {
-        "\x00\x0c\x29\xde\x6a\x62", /* vm10  ..20 */
-        "\x00\x0c\x29\x49\x3f\x5b", /* vm1  ..21 */
-        "\x00\x0c\x29\xd9\x08\xec", /* vm2  ..22 */
-        "\x00\x0c\x29\xa3\x1f\x19", /* vm3  ..23 */
-        "\x00\x0c\x29\x9e\x80\x73", /* vm4  ..24 */
-        "\x00\x0c\x29\xa5\x4b\x46", /* vm5  ..25 */
-        "\x00\x0c\x29\xb5\x32\x3d", /* vm6  ..26 */
-        "\x00\x0c\x29\x64\xe3\xd4", /* vm7  ..27 */
-        "\x00\x0c\x29\xe1\x54\xd1", /* vm8  ..28 */
-        "\x00\x0c\x29\xbb\x12\xaa"  /* vm9  ..29 */
-};
-
 static void close_sock(void *sockptr) {
     int sock = *(int *)sockptr;
     if(sock >= 0)
@@ -83,24 +70,8 @@ void *run_ping_send(void *arg) {
         tgt.sin_family = AF_INET;
         /* Request MAC address of destination IP */
         if(!areq((struct sockaddr *)&tgt, sizeof(tgt), &dst)) {
-            /* error("areq for %s failed: %s\n", inet_ntoa(tgt.sin_addr), strerror(errno)); */
-            /* break; */
-
-            /*TODO: AREQ, for now Use temporary macs of vms */
-            int offd = (ntohl(args.tgtip.s_addr) & 0xFF) % 10;
-            int offs = (ntohl(hostip.s_addr) & 0xFF) % 10;
-
-            unsigned char *srcmac = (unsigned char *)macs[offs],
-                    *dstmac = (unsigned char *)macs[offd];
-            warn("areq failed for %s using mac: ", inet_ntoa(tgt.sin_addr));
-            print_mac(dstmac);
-            printf("\n");
-            memcpy(dst.sll_addr, dstmac, ETH_ALEN);
-            memcpy(args.src.if_haddr, srcmac, ETH_ALEN);
-
-            //memset(dst.sll_addr, 0, ETH_ALEN);
-            //memset(args.src.if_haddr, 0, ETH_ALEN);
-            args.src.if_index = 2; /* eth0 if index */
+            error("areq for %s failed: %s\n", inet_ntoa(tgt.sin_addr), strerror(errno));
+            break;
         }
         /* Send ECHO request */
         if(!send_frame(sock, packet, sizeof(packet), dst.sll_addr, dst.sll_ifaddr, dst.sll_ifindex)) {
@@ -209,8 +180,16 @@ void *run_ping_recv(void *unused) {
         } else if(in_cksum((uint16_t *)(packet + iplen), icmplen) != 0) {
             debug("Node %s. Received currupt ICMP echo response.\n", host);
         } else {
-            info("Node %s. Received ping from: %s, data=%s\n", host,
-                    inet_ntoa(iph->ip_src), (char *)&icmph->icmp_data);
+            struct hostent *he = NULL;
+
+            he = gethostbyaddr(&iph->ip_src, sizeof(struct in_addr), AF_INET);
+            if(he == NULL) {
+                info("Node %s. Received ping from: %s, data=%s\n", host,
+                        inet_ntoa(iph->ip_src), (char *)&icmph->icmp_data);
+            } else {
+                info("Node %s. Received ping from: %s, data=%s\n", host,
+                        he->h_name, (char *)&icmph->icmp_data);
+            }
         }
     }
     pthread_cleanup_pop(1);
