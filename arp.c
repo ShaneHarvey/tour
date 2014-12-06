@@ -3,6 +3,40 @@
 static Cache *cache = NULL;
 static struct hwa_info *devices = NULL;
 
+static void print_addresses(struct arp_hdr *arp) {
+    int i;
+    printf(" send HA: ");
+    for(i = 0; i < arp->hard_len - 1; ++i) {
+        printf("%02hhX:", ARP_SHA(arp)[i]);
+    }
+    printf("%02hhX", ARP_SHA(arp)[i]);
+
+    printf(" send PA: ");
+    for(i = 0; i < arp->prot_len; ++i) {
+        printf("%02hhX", ARP_SPA(arp)[i]);
+    }
+    printf("\ntarget HA: ");
+    for(i = 0; i < arp->hard_len - 1; ++i) {
+        printf("%02hhX:", ARP_THA(arp)[i]);
+    }
+    printf("%02hhX", ARP_THA(arp)[i]);
+
+    printf(" target PA: ");
+    for(i = 0; i < arp->prot_len; ++i) {
+        printf("%02hhX", ARP_TPA(arp)[i]);
+    }
+    printf("\n");
+}
+
+
+#define PRINT_ARP(arp) do { printf("hard size: %hhu prot size: %hhu\n" \
+                              "protocol type: %hx hardware type: %hx\n" \
+                              "id: %hx op: %hx\n", \
+                              (arp)->hard_len, (arp)->prot_len, \
+                              (arp)->prot_type, (arp)->hard_type, \
+                              (arp)->id, (arp)->op); \
+                              print_addresses((arp));} while(0)
+
 int main(int argc, char **argv) {
     int unix_domain = -1;
     int pf_socket = -1;
@@ -354,7 +388,8 @@ ssize_t recv_frame(int pf_socket, struct ethhdr *eh, struct arp_hdr *arp, struct
         /* Convert message from Network to Host order */
         ntoh_arp(arp);
 
-        info("Received ARP message\n");
+        info("Received ARP packet: ");
+        PRINT_ARP(arp);
     }
     return nread;
 }
@@ -547,40 +582,6 @@ int valid_arp(struct arp_hdr *arp) {
     return valid;
 }
 
-static void print_addresses(struct arp_hdr *arp) {
-    int i;
-    printf("send HA: ");
-    for(i = 0; i < arp->hard_len - 1; ++i) {
-        printf("%02hhX:", ARP_SHA(arp)[i]);
-    }
-    printf("%02hhX", ARP_SHA(arp)[i]);
-
-    printf("send PA: ");
-    for(i = 0; i < arp->prot_len; ++i) {
-        printf("%02hhX", ARP_SPA(arp)[i]);
-    }
-
-    printf("target HA: ");
-    for(i = 0; i < arp->hard_len - 1; ++i) {
-        printf("%02hhX:", ARP_THA(arp)[i]);
-    }
-    printf("%02hhX", ARP_THA(arp)[i]);
-
-    printf("target PA: ");
-    for(i = 0; i < arp->prot_len; ++i) {
-        printf("%02hhX", ARP_TPA(arp)[i]);
-    }
-    printf("\n");
-}
-
-
-#define PRINT_ARP(arp) do { printf("hard size: %hhu prot size: %hhu\n" \
-                              "protocol type: %hx hardware type: %hx\n" \
-                              "id: %hx op: %hx\n", \
-                              (arp)->hard_len, (arp)->prot_len, \
-                              (arp)->prot_type, (arp)->hard_type, \
-                              (arp)->id, (arp)->op); \
-                              print_addresses((arp));} while(0)
 
 int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct sockaddr_ll *src) {
     struct in_addr tgtip;
@@ -601,7 +602,7 @@ int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct socka
                 arp->hard_len, arp->prot_len, ARPOP_REPLY, eh->h_source,
                 (u_char*)&((struct sockaddr_in*)this->ip_addr)->sin_addr, this->if_haddr, tpa);
 
-
+        info("Sending ARP packet: ");
         PRINT_ARP(&hdr);
 
         send_frame(pack_fd, &hdr, hdr_size, eh->h_source,
@@ -641,7 +642,7 @@ int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct socka
 
         } else {
             /* Update and entry */
-            warn("TODO: Update cache entry!\n");
+            //warn("TODO: Update cache entry!\n");
         }
     }
     return 1;
