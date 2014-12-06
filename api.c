@@ -3,7 +3,6 @@
 int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa) {
     int sock, rv;
     struct sockaddr_un arpaddr;
-    socklen_t arplen;
     struct areq req;
     fd_set rset;
     struct timeval tv;
@@ -17,10 +16,9 @@ int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa) {
     memset(&arpaddr, 0, sizeof(arpaddr));
     arpaddr.sun_family = AF_UNIX;
     strcpy(arpaddr.sun_path, ARP_WELL_KNOWN_PATH);
-    arplen = sizeof(arpaddr.sun_family) + strlen(ARP_WELL_KNOWN_PATH);
 
     /* Connect to ARP */
-    if(connect(sock, (struct sockaddr *)&arpaddr, arplen) < 0) {
+    if(connect(sock, (struct sockaddr *)&arpaddr, SUN_LEN(&arpaddr)) < 0) {
         error("failed to connect to ARP: %s\n", strerror(errno));
         goto CLOSE_SOCK;
     }
