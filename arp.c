@@ -1,13 +1,14 @@
 #include "arp.h"
 
 static Cache *cache = NULL;
+static struct hwa_info *devices = NULL;
 
 int main(int argc, char **argv) {
     int unix_domain = -1;
     int pf_socket = -1;
     int success = EXIT_SUCCESS;
 
-    struct hwa_info *devices = get_hw_addrs();
+    devices = get_hw_addrs();
     if(devices == NULL) {
         warn("No HW devices found on the system\n");
         success = EXIT_FAILURE;
@@ -30,7 +31,7 @@ int main(int argc, char **argv) {
     set_sig_cleanup();
 
     /* Start the arp infinite loop */
-    success = run_arp(unix_domain, pf_socket, devices);
+    success = run_arp(unix_domain, pf_socket);
 
     /* Close open socket fd */
     if(pf_socket > -1) {
@@ -48,7 +49,7 @@ UNIX_DOMAIN_FAIL:
     return success;
 }
 
-int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
+int run_arp(int unix_domain, int pf_socket) {
     int success = EXIT_SUCCESS;
     int running = 1;
     // select vars
@@ -151,11 +152,13 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                 error("read on pack sock failed: %s\n", strerror(errno));
                 success = EXIT_FAILURE;
                 break;
-            } else if((nread < sizeof(struct ethhdr) + ARP_HDRLEN) || nread !=
-                    (sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp))) {
+            } else if((nread < sizeof(struct ethhdr) + ARP_HDRLEN) || nread != (sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp))) {
                 /* Message too short */
-                debug("ARP frame len wrong: read bytes:%d, arplen:%d\n",
-                        nread, ARP_HDRLEN + ARP_DATALEN(&arp));
+                int len = sizeof(struct ethhdr) + ARP_HDRLEN;
+                int len2 = sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp);
+                debug("nread < sizeof(struct ethhdr) + ARP_HDRLEN = %d < %d\n", nread, len);
+                debug("nread != sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp) = %d != %d\n", nread, len2);
+                debug("ARP frame len wrong: read bytes:%d, arplen:%d\n", nread, ARP_HDRLEN + ARP_DATALEN(&arp));
             } else if(valid_arp(&arp)) {
                 switch(arp.op) {
                     case ARPOP_REQUEST:
@@ -400,38 +403,12 @@ void ntoh_arp(struct arp_hdr *arp) {
     arp->op = ntohs(arp->op);
 }
 
-/*
-bool isDestination(struct hwa_info *devices, Cache *cache) {
-    bool isdest = false;
-    if(devices != NULL && cache != NULL) {
-        struct hwa_info *current_device = devices;
-        while(current_device != NULL) {
-            if(!memcmp(cache->if_haddr, current_device->if_haddr, IFHWADDRLEN) &&
-               !memcmp(&(cache->ipaddress), current_device->ip_addr, sizeof(struct sockaddr))) {
-                isdest = true;
-                break;
-            } else {
-                current_device = current_device->hwa_next;
-            }
-        }
-    } else {
-        if(devices == NULL) {
-            warn("Searching empty hwa_info list.\n");
-        }
-        if(cache == NULL) {
-            warn("Searching for null <IP address , HW address> in the hwa_info list.\n");
-        }
-    }
-    return isdest;
-}
-*/
-
-bool isDestination(struct hwa_info *devices, struct sockaddr *addr) {
+bool isDestination(struct hwa_info *devices, struct ethhdr *eh) {
     bool isDest = false;
-    if(devices != NULL && addr != NULL) {
+    if(devices != NULL && eh != NULL) {
         struct hwa_info *current_device = devices;
         while(current_device != NULL) {
-            if(!memcmp(&(cache->ipaddress), current_device->ip_addr, sizeof(struct sockaddr))) {
+            if(!memcmp(&(eh->h_dest), current_device->if_haddr, sizeof(current_device->if_haddr))) {
                 isDest = true;
                 break;
             } else {
@@ -442,8 +419,8 @@ bool isDestination(struct hwa_info *devices, struct sockaddr *addr) {
         if(devices == NULL) {
             warn("Searching empty hwa_info list.\n");
         }
-        if(addr == NULL) {
-            warn("Searching for null <IP address , HW address> in the hwa_info list.\n");
+        if(eh == NULL) {
+            warn("Searching for null HW address in the hwa_info list.\n");
         }
     }
     return isDest;
@@ -609,15 +586,22 @@ int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct socka
 
     memcpy(&tgtip.s_addr, tpa, arp->prot_len);
     debug("ARP REQ: asking for target ip: %s\n", inet_ntoa(tgtip));
-    /* Loop interfaces to check if we ARE the target IP, if so send REPLY */
+    /* Loop interfaces to check if we ARE the target, if so send REPLY */
+    if(isDestination(devices, eh)) {
+
+    }
     return 0;
 }
 
 int handle_reply(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct sockaddr_ll *src) {
-
-
     /* Loop Cache entries to check if we have any INCOMPLETE entries asking
      * for this IP, if so send struct hwaddr back to connected clients.
      */
+    Cache *entry = NULL;
+    for(entry = cache; entry != NULL; entry = entry->next) {
+        if (entry->state == STATE_INCOMPLETE) {
+            /* send struct hwaddr */
+        }
+    }
     return 0;
 }

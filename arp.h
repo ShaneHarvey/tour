@@ -65,13 +65,13 @@ struct arp_hdr {
 
 int create_unix_domain(void);
 int create_pf_socket(void);
-int run_arp(int unix_domain, int pf_socket, struct hwa_info *devices);
+int run_arp(int unix_domain, int pf_socket);
 int handle_areq(int pf_socket, Cache *conn_entry, struct hwa_info *devices);
 
 ssize_t recv_frame(int pf_socket, struct ethhdr *eh, struct arp_hdr *recvmsg,
                    struct sockaddr_ll *src);
 void ntoh_arp(struct arp_hdr *arp);
-bool isDestination(struct hwa_info *devices, struct sockaddr *addr);
+bool isDestination(struct hwa_info *devices, struct ethhdr *eh);
 int send_frame(int sock, void *payload, int size, unsigned char *dstmac, unsigned char *srcmac, int ifi_index);
 
 int maxfd(int pf_socket, int unix_domain, Cache *cache);
