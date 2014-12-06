@@ -490,7 +490,7 @@ int send_frame(int sock, void *payload, int size, unsigned char *dstmac,
     /* Initialize ethernet frame */
     memcpy(eh->h_dest, dstmac, ETH_ALEN);
     memcpy(eh->h_source, srcmac, ETH_ALEN);
-    eh->h_proto = htons(ETH_P_IP);
+    eh->h_proto = htons(ETH_P_ARP_SH);
 
     /* Copy frame data into buffer */
     memcpy(frame + sizeof(struct ethhdr), payload, size);
@@ -501,7 +501,7 @@ int send_frame(int sock, void *payload, int size, unsigned char *dstmac,
     dest.sll_ifindex = ifi_index;
     memcpy(dest.sll_addr, dstmac, ETH_ALEN);
     dest.sll_halen = ETH_ALEN;
-    dest.sll_protocol = htons(ETH_P_IP);
+    dest.sll_protocol = htons(ETH_P_ARP_SH);
 
     /* print_frame(eh, payload); */
 
