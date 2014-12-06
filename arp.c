@@ -65,7 +65,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
         FD_SET(pf_socket, &rset);
         /* Set the client domain sockets */
         for(current = cache; current != NULL; current = current->next) {
-            if(current->state & (STATE_CONNECTION | STATE_INCOMPLETE)) {
+            if(current->state != STATE_COMPLETE) {
                 FD_SET(current->domain_socket, &rset);
             }
         }
@@ -86,6 +86,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
             }
             if(FD_ISSET(current->domain_socket, &rset)) {
                 int rv = 0;
+                debug("Client UNIX connection is readable\n");
                 if(current->state == STATE_CONNECTION) {
                     rv = handle_areq(pf_socket, current, devices);
                 }
@@ -110,6 +111,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
             /* Communicate with areq function */
             struct sockaddr_un remote;
             socklen_t addrlen;
+            debug("Connection on UNIX socket\n");
             /* Accept the incomming connection */
             int sfd = accept(unix_domain, (struct sockaddr*)&remote, &addrlen);
             /* Double check and make sure it doesn't exist */
@@ -448,7 +450,7 @@ int maxfd(int pf_socket, int unix_domain, Cache *cache) {
     if(cache != NULL) {
         Cache *current = cache;
         while(current != NULL) {
-            if(current->state & (STATE_CONNECTION | STATE_INCOMPLETE)) {
+            if(current->state != STATE_COMPLETE) {
                 maxfd = maxfd > current->domain_socket ? maxfd : current->domain_socket;
             }
             current = current->next;

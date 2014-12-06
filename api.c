@@ -43,12 +43,17 @@ int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa) {
         error("select failed: %s\n", strerror(errno));
         goto CLOSE_SOCK;
     } else if(rv == 0) {
-        error("ARP request timed out.");
+        error("ARP request timed out.\n");
         goto CLOSE_SOCK;
     } else {
+        int nread;
         /* The socket is readable */
-        if(recv(sock, hwa, sizeof(struct hwaddr), 0)) {
-            error("failed to connect to ARP: %s\n", strerror(errno));
+        if((nread = recv(sock, hwa, sizeof(struct hwaddr), 0)) < 0) {
+            error("failed to recv from ARP: %s\n", strerror(errno));
+            goto CLOSE_SOCK;
+        } else if(nread < sizeof(struct hwaddr)) {
+            errno = EPROTO;
+            error("ARP failed: %s\n", strerror(errno));
             goto CLOSE_SOCK;
         }
     }
