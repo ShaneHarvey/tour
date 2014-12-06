@@ -170,38 +170,6 @@ int run_arp(int unix_domain, int pf_socket) {
                         warn("Unsupported ARP op %hu\n", arp.op);
                         break;
                 }
-                /*
-                Extract information about this msg
-                if the msg was destined for this node:
-                the <ip,hw> address should be stored in the cache or updated
-                else:
-                If the entry already exists update it, but do not add a new
-                entry to the cache.
-                */
-                // TODO: This might be messed up
-                /* Create a template to search with */
-//                Cache *cache_template = malloc(sizeof(Cache));
-//                memset(cache_template, 0, sizeof(Cache));
-//                /* Set fields */
-//                cache_template->hw.sll_ifindex = llsrc.sll_ifindex;
-//                cache_template->ipaddress = arp.addr;
-//                cache_template->hw.sll_hatype = llsrc.sll_hatype;
-//                memcpy(cache_template->hw.sll_addr, llsrc.sll_addr, IFHWADDRLEN);
-//                /* Try to get this cache entry */
-//                Cache *ce = getFromCache(cache, cache_template);
-//                /* Determine where this messages destination is */
-//                if(ce == NULL && isDestination(devices, &arp.addr)) {
-//                    // Add the new entry to the cache
-//                    if(!addToCache(&cache, cache_template)) {
-//                        error("Failed to add new cache entry.\n");
-//                    }
-//                } else if(ce != NULL) {
-//                    // Update the cache entry
-//                    if(!updateCache(cache, cache_template)) {
-//                        error("Failed to update an existing cache entry.\n");
-//                        free(cache_template);
-//                    }
-//                }
             } else {
                 /* invalid arp, do nothing */;
             }
@@ -579,11 +547,45 @@ int valid_arp(struct arp_hdr *arp) {
     return valid;
 }
 
+static void print_addresses(struct arp_hdr *arp) {
+    int i;
+    printf("send HA: ");
+    for(i = 0; i < arp->hard_len - 1; ++i) {
+        printf("%02hhX:", ARP_SHA(arp)[i]);
+    }
+    printf("%02hhX", ARP_SHA(arp)[i]);
+
+    printf("send PA: ");
+    for(i = 0; i < arp->prot_len; ++i) {
+        printf("%02hhX", ARP_SPA(arp)[i]);
+    }
+
+    printf("target HA: ");
+    for(i = 0; i < arp->hard_len - 1; ++i) {
+        printf("%02hhX:", ARP_THA(arp)[i]);
+    }
+    printf("%02hhX", ARP_THA(arp)[i]);
+
+    printf("target PA: ");
+    for(i = 0; i < arp->prot_len; ++i) {
+        printf("%02hhX", ARP_TPA(arp)[i]);
+    }
+    printf("\n");
+}
+
+
+#define PRINT_ARP(arp) do { printf("hard size: %hhu prot size: %hhu\n" \
+                              "protocol type: %hx hardware type: %hx\n" \
+                              "id: %hx op: %hx\n", \
+                              (arp)->hard_len, (arp)->prot_len, \
+                              (arp)->prot_type, (arp)->hard_type, \
+                              (arp)->id, (arp)->op); \
+                              print_addresses((arp));} while(0)
+
 int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct sockaddr_ll *src) {
     struct in_addr tgtip;
     u_char *tpa = ARP_TPA(arp);
     struct hwa_info *this = NULL;
-
     memcpy(&tgtip.s_addr, tpa, arp->prot_len);
     debug("ARP REQ: asking for target ip: %s\n", inet_ntoa(tgtip));
     /* Loop interfaces to check if we ARE the target, if so send REPLY */
@@ -598,6 +600,9 @@ int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct socka
         hdr_size = build_arp((u_char*)&hdr, sizeof(struct arp_hdr), arp->hard_type, arp->prot_type,
                 arp->hard_len, arp->prot_len, ARPOP_REPLY, eh->h_source,
                 (u_char*)&((struct sockaddr_in*)this->ip_addr)->sin_addr, this->if_haddr, tpa);
+
+
+        PRINT_ARP(&hdr);
 
         send_frame(pack_fd, &hdr, hdr_size, eh->h_source,
                 mac_by_ifindex(src->sll_ifindex), src->sll_ifindex);
