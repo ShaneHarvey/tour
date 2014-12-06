@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
     if(devices == NULL) {
         warn("No HW devices found on the system\n");
         success = EXIT_FAILURE;
-        // goto NO_HW_DEVICES;
+        goto NO_HW_DEVICES;
     }
 
     /* Create the unix domain socket */
@@ -45,7 +45,7 @@ PF_PACKET_FAIL:
 UNIX_DOMAIN_FAIL:
     /* Remove the "well known" file */
     unlink(ARP_WELL_KNOWN_PATH);
-// NO_HW_DEVICES:
+NO_HW_DEVICES:
     return success;
 }
 
