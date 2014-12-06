@@ -71,7 +71,7 @@ int handle_areq(int pf_socket, Cache *conn_entry, struct hwa_info *devices);
 ssize_t recv_frame(int pf_socket, struct ethhdr *eh, struct arp_hdr *recvmsg,
                    struct sockaddr_ll *src);
 void ntoh_arp(struct arp_hdr *arp);
-bool isDestination(struct hwa_info *devices, struct ethhdr *eh);
+struct hwa_info* isDestination(struct hwa_info *devices, struct in_addr *ip_addr);
 int send_frame(int sock, void *payload, int size, unsigned char *dstmac, unsigned char *srcmac, int ifi_index);
 
 int maxfd(int pf_socket, int unix_domain, Cache *cache);
@@ -86,7 +86,7 @@ int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct
 
 int handle_reply(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct
         sockaddr_ll *src);
-
+u_char *mac_by_ifindex(int index);
 /* Signal handling for cleanup */
 void cleanup(int signum);
 void set_sig_cleanup(void);

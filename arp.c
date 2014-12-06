@@ -405,13 +405,13 @@ void ntoh_arp(struct arp_hdr *arp) {
     arp->op = ntohs(arp->op);
 }
 
-bool isDestination(struct hwa_info *devices, struct ethhdr *eh) {
-    bool isDest = false;
-    if(devices != NULL && eh != NULL) {
+struct hwa_info* isDestination(struct hwa_info *devices, struct in_addr *ip_addr) {
+    struct hwa_info *dest = NULL;
+    if(devices != NULL && ip_addr != NULL) {
         struct hwa_info *current_device = devices;
         while(current_device != NULL) {
-            if(!memcmp(&(eh->h_dest), current_device->if_haddr, sizeof(current_device->if_haddr))) {
-                isDest = true;
+            if(ip_addr->s_addr == ((struct sockaddr_in*)current_device->ip_addr)->sin_addr.s_addr) {
+                dest = current_device;
                 break;
             } else {
                 current_device = current_device->hwa_next;
@@ -421,11 +421,11 @@ bool isDestination(struct hwa_info *devices, struct ethhdr *eh) {
         if(devices == NULL) {
             warn("Searching empty hwa_info list.\n");
         }
-        if(eh == NULL) {
+        if(ip_addr == NULL) {
             warn("Searching for null HW address in the hwa_info list.\n");
         }
     }
-    return isDest;
+    return dest;
 }
 
 int maxfd(int pf_socket, int unix_domain, Cache *cache) {
@@ -585,12 +585,23 @@ int valid_arp(struct arp_hdr *arp) {
 int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct sockaddr_ll *src) {
     struct in_addr tgtip;
     u_char *tpa = ARP_TPA(arp);
+    struct hwa_info *this = NULL;
 
     memcpy(&tgtip.s_addr, tpa, arp->prot_len);
     debug("ARP REQ: asking for target ip: %s\n", inet_ntoa(tgtip));
     /* Loop interfaces to check if we ARE the target, if so send REPLY */
-    if(isDestination(devices, eh)) {
+    if((this = isDestination(devices, &tgtip)) != NULL) {
+        int hdr_size = 0;
+        struct arp_hdr hdr;
 
+
+        memset(&hdr, 0, sizeof(struct arp_hdr));
+        hdr_size = build_arp((u_char*)&hdr, sizeof(struct arp_hdr), arp->hard_type, arp->prot_type,
+                arp->hard_len, arp->prot_len, ARPOP_REPLY, eh->h_source,
+                (u_char*)&((struct sockaddr_in*)this->ip_addr)->sin_addr, this->if_haddr, tpa);
+
+        send_frame(pack_fd, &hdr, hdr_size, eh->h_source,
+                mac_by_ifindex(src->sll_ifindex), src->sll_ifindex);
     }
     return 0;
 }
@@ -606,4 +617,17 @@ int handle_reply(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct soc
         }
     }
     return 0;
+}
+
+u_char *mac_by_ifindex(int index) {
+    u_char *outmac = NULL;
+    struct hwa_info *tmp;
+
+    for(tmp = devices; tmp != NULL; tmp = tmp->hwa_next) {
+        if(tmp->if_index == index) {
+            outmac = tmp->if_haddr;
+            break;
+        }
+    }
+    return outmac;
 }
