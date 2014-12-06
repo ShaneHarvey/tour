@@ -7,6 +7,8 @@ int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa) {
     fd_set rset;
     struct timeval tv;
 
+    info("AREQ for IP: %s\n", inet_ntoa(((struct sockaddr_in *)ipa)->sin_addr));
+
     if((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
         error("failed to create unix socket: %s\n", strerror(errno));
         return 0;
@@ -37,7 +39,6 @@ int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa) {
     tv.tv_sec = 2;
     tv.tv_usec = 0;
 
-
     FD_ZERO(&rset);
     FD_SET(sock, &rset);
     rv = select(sock + 1, &rset, NULL, NULL, &tv);
@@ -58,11 +59,26 @@ int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa) {
             error("ARP failed: %s\n", strerror(errno));
             goto CLOSE_SOCK;
         }
+        info("AREQ returned <IP: %s, ETH: ", inet_ntoa(((struct
+                sockaddr_in *)ipa)->sin_addr));
+        print_hwa(hwa);
+        printf(">\n");
     }
 
     close(sock);
     return 1;
 CLOSE_SOCK:
+    warn("AREQ for IP: %s failed\n", inet_ntoa(((struct sockaddr_in *)ipa)->sin_addr));
     close(sock);
     return 0;
+}
+
+
+
+void print_hwa(struct hwaddr *hwa) {
+    int i;
+    for(i = 0; i < hwa->sll_halen - 1; ++i) {
+        printf("%02hhX:", hwa->sll_addr[i]);
+    }
+    printf("%02hhX", hwa->sll_addr[i]);
 }

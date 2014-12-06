@@ -12,6 +12,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <net/if_arp.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 /* Program headers */
 #include "debug.h"
 #include "api.h"
@@ -25,12 +27,17 @@ struct areq {
 
 /* ARP Response that ARP sends back to API */
 struct hwaddr {
-    int             sll_ifindex;    /* Interface number */
-    unsigned short  sll_hatype;     /* Hardware type */
-    unsigned char   sll_halen;      /* Length of address */
-    unsigned char   sll_addr[8]; /* Physical layer address */
+    int             sll_ifindex;     /* Outgoing Interface number */
+    unsigned short  sll_ifhatype;     /* Outgoing Hardware type */
+    unsigned char   sll_ifhalen;      /* Outgoing Length of address */
+    unsigned char   sll_ifaddr[8];    /* Outgoing Physical layer address */
+    unsigned short  sll_hatype;      /* Hardware type */
+    unsigned char   sll_halen;       /* Length of address */
+    unsigned char   sll_addr[8];     /* Physical layer address */
 };
 
 int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa);
+
+void print_hwa(struct hwaddr *hwa);
 
 #endif

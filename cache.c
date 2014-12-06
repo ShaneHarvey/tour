@@ -135,7 +135,7 @@ Cache *getCacheByIpAddr(Cache *list, struct sockaddr *ipaddress) {
     if(list != NULL && ipaddress != NULL) {
         Cache *node = list;
         while(node != NULL) {
-            if(!memcmp(&(node->ipaddress), &ipaddress, sizeof(struct sockaddr))) {
+            if(!memcmp(&(node->ipaddress), ipaddress, sizeof(struct sockaddr))) {
                 found = node;
                 break;
             } else {

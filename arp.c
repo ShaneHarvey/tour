@@ -98,6 +98,7 @@ int run_arp(int unix_domain, int pf_socket) {
                     current = current->next;
                     /* If we read zero bytes then the socket closed */
                     close(rm->domain_socket);
+                    rm->domain_socket = -1;
                     if(!removeFromCache(&cache, rm)) {
                         error("Failed to remove the cache entry from the cache.");
                     }
@@ -156,10 +157,6 @@ int run_arp(int unix_domain, int pf_socket) {
                 break;
             } else if((nread < sizeof(struct ethhdr) + ARP_HDRLEN) || nread < (sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp))) {
                 /* Message too short */
-                int len = sizeof(struct ethhdr) + ARP_HDRLEN;
-                int len2 = sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp);
-                debug("nread < sizeof(struct ethhdr) + ARP_HDRLEN = %d < %d\n", nread, len);
-                debug("nread != sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp) = %d != %d\n", nread, len2);
                 debug("ARP frame len wrong: read bytes:%d, arplen:%d\n", nread, ARP_HDRLEN + ARP_DATALEN(&arp));
             } else if(valid_arp(&arp)) {
                 switch(arp.op) {
@@ -486,12 +483,12 @@ int send_frame(int sock, void *payload, int size, unsigned char *dstmac,
 
     if((nsent = sendto(sock, frame, size+sizeof(struct ethhdr), 0,
         (struct sockaddr *)&dest, sizeof(struct sockaddr_ll))) < 0) {
-            error("packet sendto: %s\n", strerror(errno));
-            return 0;
-        } else {
-            debug("Send %d bytes, payload size:%d\n", nsent, size);
-        }
-        return 1;
+        error("packet sendto: %s\n", strerror(errno));
+        return 0;
+    } else {
+        debug("Send %d bytes, payload size:%d\n", nsent, size);
+    }
+    return 1;
 }
 
 /**
@@ -593,7 +590,9 @@ int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct socka
     if((this = isDestination(devices, &tgtip)) != NULL) {
         int hdr_size = 0;
         struct arp_hdr hdr;
-
+        Cache *entry = NULL;
+        struct sockaddr blah;
+        struct sockaddr_in *srcip = (struct sockaddr_in *)&blah;
 
         memset(&hdr, 0, sizeof(struct arp_hdr));
         hdr_size = build_arp((u_char*)&hdr, sizeof(struct arp_hdr), arp->hard_type, arp->prot_type,
@@ -602,8 +601,45 @@ int handle_req(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct socka
 
         send_frame(pack_fd, &hdr, hdr_size, eh->h_source,
                 mac_by_ifindex(src->sll_ifindex), src->sll_ifindex);
+
+        /* Now add a reverse cache entry */
+        memset(&blah, 0, sizeof(blah));
+        srcip->sin_family = arp->prot_type;
+        memcpy(&srcip->sin_addr.s_addr, ARP_SPA(arp), arp->prot_len);
+
+        entry = getCacheByIpAddr(cache, &blah);
+        if(entry == NULL) {
+            Cache *new_entry;
+            /* Add an entry */
+
+            if((new_entry = calloc(1, sizeof(Cache))) == NULL) {
+                error("calloc failed: %s\n", strerror(errno));
+                exit(EXIT_FAILURE);
+            }
+            /* Init hardware address */
+            new_entry->hw.sll_ifindex = src->sll_ifindex;
+            new_entry->hw.sll_ifhalen = ETH_ALEN;
+            new_entry->hw.sll_ifhatype = ARPHRD_ETHER;
+            memcpy(new_entry->hw.sll_ifaddr, mac_by_ifindex(src->sll_ifindex), ETH_ALEN);
+            new_entry->hw.sll_halen = src->sll_halen;
+            new_entry->hw.sll_hatype = src->sll_hatype;
+            memcpy(new_entry->hw.sll_addr, src->sll_addr, src->sll_halen);
+            /* Init protocol address */
+            memcpy(&new_entry->ipaddress, srcip, sizeof(struct sockaddr));
+            new_entry->state = STATE_COMPLETE;
+            if(!addToCache(&cache, new_entry)) {
+                error("Failed to add new cache entry.\n");
+                return 0;
+            }
+
+            debug("Added cache entry!\n");
+
+        } else {
+            /* Update and entry */
+            warn("TODO: Update cache entry!\n");
+        }
     }
-    return 0;
+    return 1;
 }
 
 int handle_reply(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct sockaddr_ll *src) {
@@ -611,9 +647,42 @@ int handle_reply(int pack_fd, struct ethhdr *eh, struct arp_hdr *arp, struct soc
      * for this IP, if so send struct hwaddr back to connected clients.
      */
     Cache *entry = NULL;
+    struct sockaddr_in repip = {0};
+    u_char *tpa = ARP_TPA(arp);
+    struct hwaddr new;
+    memset(&new, 0, sizeof(new));
+    /* Construct hwaddr from the ARP reply */
+    new.sll_halen = arp->hard_len;
+    new.sll_hatype = htons(arp->hard_type); //???
+    memcpy(new.sll_addr, ARP_THA(arp), arp->hard_len);
+    new.sll_ifindex = src->sll_ifindex;
+    new.sll_ifhalen = ETH_ALEN;
+    new.sll_hatype = htons(ARPHRD_ETHER);
+    memcpy(new.sll_ifaddr, mac_by_ifindex( src->sll_ifindex), arp->hard_len);
+
+    memset(&repip, 0, sizeof(repip));
+    repip.sin_family = arp->prot_type;
+    memcpy(&repip.sin_addr.s_addr, tpa, arp->prot_len);
+
+    debug("Handling ARP reply with IP %s\n", inet_ntoa(repip.sin_addr));
     for(entry = cache; entry != NULL; entry = entry->next) {
-        if (entry->state == STATE_INCOMPLETE) {
-            /* send struct hwaddr */
+        if(!memcmp(&repip, &entry->ipaddress,  sizeof(repip))) {
+            /* This entry is relevent */
+            if (entry->state == STATE_INCOMPLETE) {
+                /* send struct hwaddr */
+                int nsent;
+                nsent = send(entry->domain_socket, &new, sizeof(new), 0);
+                if(nsent < 0) {
+                    warn("ARP response to API failed: %s\n", strerror(errno));
+                }
+                /* Complete the entry */
+                memcpy(&entry->hw, &new, sizeof(new));
+                close(entry->domain_socket);
+                entry->domain_socket = -1;
+                entry->state = STATE_COMPLETE;
+            } else if(entry->state == STATE_COMPLETE) {
+                /* Update?? */
+            }
         }
     }
     return 0;

@@ -51,7 +51,6 @@ void *run_ping_send(void *arg) {
         error("failed to create packet socket: %s\n", strerror(errno));
         pthread_exit(NULL);
     }
-    /*TODO: FINISH Init the ICMP (Echo data?) and IP headers */
     memset(packet, 0, sizeof(packet));
     iph->ip_src.s_addr = hostip.s_addr;
     iph->ip_dst.s_addr = args.tgtip.s_addr;
@@ -104,7 +103,7 @@ void *run_ping_send(void *arg) {
             args.src.if_index = 2; /* eth0 if index */
         }
         /* Send ECHO request */
-        if(!send_frame(sock, packet, sizeof(packet), dst.sll_addr, args.src.if_haddr, args.src.if_index)) {
+        if(!send_frame(sock, packet, sizeof(packet), dst.sll_addr, dst.sll_ifaddr, dst.sll_ifindex)) {
             break;
         }
 
