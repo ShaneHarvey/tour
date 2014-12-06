@@ -8,6 +8,7 @@
 #include <netinet/ip_icmp.h>
 #include <netpacket/packet.h>
 #include <net/ethernet.h>
+#include <netdb.h>
 #include <pthread.h>
 #include "get_hw_addrs.h"
 
