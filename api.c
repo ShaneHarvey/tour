@@ -36,6 +36,8 @@ int areq(struct sockaddr *ipa, socklen_t len, struct hwaddr *hwa) {
     /* Wait 2 seconds for ARP response */
     tv.tv_sec = 2;
     tv.tv_usec = 0;
+
+
     FD_ZERO(&rset);
     FD_SET(sock, &rset);
     rv = select(sock + 1, &rset, NULL, NULL, &tv);

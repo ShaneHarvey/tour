@@ -100,6 +100,9 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
                     if(!removeFromCache(&cache, rm)) {
                         error("Failed to remove the cache entry from the cache.");
                     }
+                } else {
+                    // Get the next node
+                    current = current->next;
                 }
             } else {
                 // Get the next node
@@ -138,6 +141,7 @@ int run_arp(int unix_domain, int pf_socket,  struct hwa_info *devices) {
             struct sockaddr_ll llsrc;
             int nread = 0;
             // int srcindex = 0;
+            debug("PF_SOCKET is readable\n");
             /* zero out structs */
             memset(&eh, 0, sizeof(struct ethhdr));
             memset(&llsrc, 0, sizeof(struct sockaddr_ll));
@@ -523,11 +527,11 @@ int build_arp(u_char *start, int size, uint16_t hard_type, uint16_t prot_type,
         u_char hard_len, u_char prot_len, uint16_t op, u_char *send_hwa,
         u_char *send_pro, u_char *target_hwa, u_char *target_pro) {
     struct arp_hdr *hdr = (struct arp_hdr *)start;
-    u_char *sha = start + sizeof(struct arp_hdr); /* send hw address */
+    u_char *sha = start + ARP_HDRLEN;             /* send hw address */
     u_char *spa = sha + hard_len;                 /* send protocol address */
     u_char *tha = spa + prot_len;                 /* target hw address */
     u_char *tpa = tha + hard_len;                 /* target protocol address */
-    int len = sizeof(struct arp_hdr) + 2 * hard_len + 2 * prot_len;
+    int len = ARP_HDRLEN + 2 * hard_len + 2 * prot_len;
 
     if(start == NULL || size < len) {
         warn("Buffer too small to build arp packet: %d\n", size);
