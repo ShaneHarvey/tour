@@ -116,13 +116,15 @@ int run_arp(int unix_domain, int pf_socket) {
             struct sockaddr_un remote;
             socklen_t addrlen;
             debug("Connection on UNIX socket\n");
+            memset(&remote, 0, sizeof(remote));
+            addrlen = sizeof(remote);
             /* Accept the incomming connection */
             int sfd = accept(unix_domain, (struct sockaddr*)&remote, &addrlen);
             /* Double check and make sure it doesn't exist */
             Cache *ce = getCacheBySocket(cache, sfd);
             if(ce == NULL) {
                 /* Build a partial cache entry */
-                ce = malloc(sizeof(Cache));
+                ce = calloc(1, sizeof(Cache));
             }
             /* Update the fd */
             ce->domain_socket = sfd;
@@ -152,7 +154,7 @@ int run_arp(int unix_domain, int pf_socket) {
                 error("read on pack sock failed: %s\n", strerror(errno));
                 success = EXIT_FAILURE;
                 break;
-            } else if((nread < sizeof(struct ethhdr) + ARP_HDRLEN) || nread != (sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp))) {
+            } else if((nread < sizeof(struct ethhdr) + ARP_HDRLEN) || nread < (sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp))) {
                 /* Message too short */
                 int len = sizeof(struct ethhdr) + ARP_HDRLEN;
                 int len2 = sizeof(struct ethhdr) + ARP_HDRLEN + ARP_DATALEN(&arp);
@@ -572,7 +574,7 @@ int valid_arp(struct arp_hdr *arp) {
         debug("INVALID ARP: prot_len %hhu to big\n", arp->prot_len);
         valid = 0;
     }
-    if(arp->op != ARPOP_REQUEST || arp->op != ARPOP_REPLY) {
+    if(arp->op != ARPOP_REQUEST && arp->op != ARPOP_REPLY) {
         debug("INVALID ARP: op %hu is not REQ or REP\n", arp->op);
         valid = 0;
     }
