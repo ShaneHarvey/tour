@@ -11,6 +11,8 @@
 #include <pthread.h>
 #include "get_hw_addrs.h"
 
+#define ICMP_ID 0xDEAC
+
 #define ICMP_DATA_LEN 8
 #define ICMP_ECHO_DATA "PINGPONG"
 

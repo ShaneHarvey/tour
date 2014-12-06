@@ -67,7 +67,7 @@ void *run_ping_send(void *arg) {
     /* Fill out ICMP echo request */
     icmph->icmp_type = ICMP_ECHO;
     icmph->icmp_code = 0;
-    icmph->icmp_id = htons((short)self);
+    icmph->icmp_id = htons(ICMP_ID);
     memcpy(icmph->icmp_data, ICMP_ECHO_DATA, ICMP_DATA_LEN);
 
     while(1) {
@@ -201,10 +201,12 @@ void *run_ping_recv(void *unused) {
         if(nread < 0) {
             error("ping socket recvfrom failed: %s\n", strerror(errno));
             pthread_exit(NULL);
-        } else if(icmph->icmp_type != ICMP_ECHOREPLY) {
-            debug("Node %s. Ignoring non-ping ICMP message.\n", host);
         } else if(nread < iplen + ICMP_MINLEN) {
             debug("Node %s. Received %d bytes. Too small to be ICMP ping.\n", host, nread);
+        } else if(icmph->icmp_type != ICMP_ECHOREPLY) {
+            debug("Node %s. Ignoring non-ping ICMP message.\n", host);
+        } else if(icmph->icmp_id != htons(ICMP_ID)) {
+            debug("Node %s. Received ICMP ping from other procces.\n", host);
         } else if(in_cksum((uint16_t *)(packet + iplen), icmplen) != 0) {
             debug("Node %s. Received currupt ICMP echo response.\n", host);
         } else {
